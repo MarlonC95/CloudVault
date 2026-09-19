@@ -1,0 +1,41 @@
+# Environment & Secrets
+.env
+.env.local
+*.env
+
+# Python & Django
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+venv/
+env/
+.venv/
+staticfiles/
+media/
+
+# Node & React
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dist/
+build/
+
+# IDEs & System
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker & MinIO data (si persistes en volumen local)
+minio_data/
+postgres_data/
+
+# Coverage & Test reports
+htmlcov/
+.coverage
+.pytest_cache/
+coverage/
