@@ -144,3 +144,39 @@ CREATE INDEX idx_carpetas_org ON carpetas(organizacion_id);
 CREATE INDEX idx_carpetas_padre ON carpetas(carpeta_padre_id);
 CREATE INDEX idx_carpetas_papelera ON carpetas(en_papelera, fecha_papelera);
 CREATE INDEX idx_miembros_org ON miembros_organizacion(organizacion_id, usuario_id);
+-- =====================================================
+-- 1. SOPORTE PARA 2FA / TOTP (RF-04)
+-- =====================================================
+ALTER TABLE usuarios 
+ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64) DEFAULT NULL,
+ADD COLUMN IF NOT EXISTS is_2fa_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- =====================================================
+-- 2. FRECUENCIA DE FACTURACIÓN (RF-11: MENSUAL / ANUAL)
+-- =====================================================
+ALTER TABLE suscripciones 
+ADD COLUMN IF NOT EXISTS intervalo VARCHAR(20) NOT NULL DEFAULT 'MONTHLY' 
+CHECK (intervalo IN ('MONTHLY', 'YEARLY'));
+
+-- =====================================================
+-- 3. PERMITIR RECURSOS PERSONALES DIRECTOS (Opcional a nivel BD)
+-- =====================================================
+-- Permite que archivos y carpetas pertenezcan a un usuario particular
+-- sin obligarlo a crear una organización si el backend no lo requiere.
+ALTER TABLE carpetas ALTER COLUMN organizacion_id DROP NOT NULL;
+ALTER TABLE archivos ALTER COLUMN organizacion_id DROP NOT NULL;
+
+-- =====================================================
+-- 4. TABLA DE REGISTROS DE AUDITORÍA (RF-14: Audit Logs)
+-- =====================================================
+CREATE TABLE IF NOT EXISTS logs_auditoria (
+    id BIGSERIAL PRIMARY KEY,
+    organizacion_id UUID REFERENCES organizaciones(id) ON DELETE CASCADE,
+    usuario_id UUID REFERENCES usuarios(id) ON DELETE SET NULL,
+    accion VARCHAR(100) NOT NULL,            -- 'FILE_UPLOAD', 'FILE_DELETE', 'ROLE_CHANGE', etc.
+    ip_origen VARCHAR(45),
+    detalles JSONB,                          -- Metadatos adicionales del evento
+    fecha_evento TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_logs_auditoria_org ON logs_auditoria(organizacion_id, fecha_evento DESC);
