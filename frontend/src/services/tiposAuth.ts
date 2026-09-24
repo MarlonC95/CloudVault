@@ -21,3 +21,9 @@ export interface RespuestaLogin {
   refreshToken: string
   usuario: UsuarioAutenticado
 }
+
+export interface DatosRecuperacion {
+  correoElectronico: string
+  palabraSecreta: string
+  nuevaContrasena: string
+}

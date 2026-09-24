@@ -1,4 +1,4 @@
-import type { DatosLogin, DatosRegistro, RespuestaLogin, UsuarioAutenticado } from './tiposAuth'
+import type { DatosLogin, DatosRecuperacion,  DatosRegistro, RespuestaLogin, UsuarioAutenticado } from './tiposAuth'
 
 const RETARDO_SIMULADO_MS = 800
 
@@ -36,4 +36,15 @@ export async function iniciarSesion(datos: DatosLogin): Promise<RespuestaLogin> 
       correoElectronico: datos.correoElectronico,
     },
   }
+}
+
+// ...
+
+/**
+ * Restablece la contraseña usando la palabra secreta como verificación.
+ * TODO(backend): reemplazar por la llamada real con axios a POST /api/auth/recuperar-password/
+ */
+export async function recuperarContrasena(datos: DatosRecuperacion): Promise<void> {
+  console.log('[authService] Simulando recuperación con:', datos)
+  await new Promise((resolve) => setTimeout(resolve, RETARDO_SIMULADO_MS))
 }
