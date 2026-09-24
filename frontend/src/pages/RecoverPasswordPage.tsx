@@ -75,11 +75,11 @@ function RecoverPasswordPage() {
     }
   }
 
-  return (
+    return (
     <div className="d-flex justify-content-center align-items-start align-items-md-center min-vh-100 py-5 px-3 bg-light">
       <div
         className="bg-white shadow-lg overflow-hidden w-100"
-        style={{ maxWidth: '440px', borderRadius: '28px' }}
+        style={{ maxWidth: '640px', borderRadius: '28px' }}
       >
         {/* Franja curva de branding */}
         <div
@@ -93,7 +93,7 @@ function RecoverPasswordPage() {
           <span className="fw-bold">CloudVault</span>
         </div>
 
-        <div className="p-4 p-md-5 pt-4">
+        <div className="p-4 p-md-5 px-md-4 px-lg-5 pt-4">
           <h2 className="fw-bold mb-1 fs-4">Recuperar contraseña</h2>
           <p className="text-secondary small mb-4">Verifica tu identidad con tu palabra secreta.</p>
 
@@ -169,67 +169,69 @@ function RecoverPasswordPage() {
                   </div>
                 </div>
 
-                <div className="mb-3">
-                  <label htmlFor="nuevaContrasena" className="form-label small fw-semibold">
-                    Nueva contraseña
-                  </label>
-                  <div className="input-group has-validation">
-                    <span
-                      className="input-group-text border-0"
-                      style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '50px 0 0 50px' }}
-                    >
-                      <Lock size={18} color={COLOR_MARCA} />
-                    </span>
-                    <input
-                      id="nuevaContrasena"
-                      type={mostrarContrasena ? 'text' : 'password'}
-                      className={`form-control border-0 ${errores.nuevaContrasena ? 'is-invalid' : ''}`}
-                      style={{ backgroundColor: COLOR_ICONO_FONDO }}
-                      placeholder={`Mínimo ${LONGITUD_MINIMA_CONTRASENA} caracteres`}
-                      value={nuevaContrasena}
-                      onChange={(evento) => setNuevaContrasena(evento.target.value)}
-                      disabled={estaEnviando}
-                    />
-                    <button
-                      type="button"
-                      className="btn border-0"
-                      style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
-                      onClick={() => setMostrarContrasena(!mostrarContrasena)}
-                      disabled={estaEnviando}
-                      aria-label={mostrarContrasena ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                    >
-                      {mostrarContrasena ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                    {errores.nuevaContrasena && (
-                      <div className="invalid-feedback">{errores.nuevaContrasena}</div>
-                    )}
+                <div className="row g-3 mb-4">
+                  <div className="col-12 col-sm-6">
+                    <label htmlFor="nuevaContrasena" className="form-label small fw-semibold">
+                      Nueva contraseña
+                    </label>
+                    <div className="input-group has-validation">
+                      <span
+                        className="input-group-text border-0"
+                        style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '50px 0 0 50px' }}
+                      >
+                        <Lock size={18} color={COLOR_MARCA} />
+                      </span>
+                      <input
+                        id="nuevaContrasena"
+                        type={mostrarContrasena ? 'text' : 'password'}
+                        className={`form-control border-0 ${errores.nuevaContrasena ? 'is-invalid' : ''}`}
+                        style={{ backgroundColor: COLOR_ICONO_FONDO }}
+                        placeholder={`Mínimo ${LONGITUD_MINIMA_CONTRASENA} caracteres`}
+                        value={nuevaContrasena}
+                        onChange={(evento) => setNuevaContrasena(evento.target.value)}
+                        disabled={estaEnviando}
+                      />
+                      <button
+                        type="button"
+                        className="btn border-0"
+                        style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
+                        onClick={() => setMostrarContrasena(!mostrarContrasena)}
+                        disabled={estaEnviando}
+                        aria-label={mostrarContrasena ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                      >
+                        {mostrarContrasena ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                      {errores.nuevaContrasena && (
+                        <div className="invalid-feedback">{errores.nuevaContrasena}</div>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                <div className="mb-4">
-                  <label htmlFor="confirmarNuevaContrasena" className="form-label small fw-semibold">
-                    Confirmar nueva contraseña
-                  </label>
-                  <div className="input-group has-validation">
-                    <span
-                      className="input-group-text border-0"
-                      style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '50px 0 0 50px' }}
-                    >
-                      <Lock size={18} color={COLOR_MARCA} />
-                    </span>
-                    <input
-                      id="confirmarNuevaContrasena"
-                      type={mostrarContrasena ? 'text' : 'password'}
-                      className={`form-control border-0 ${errores.confirmarNuevaContrasena ? 'is-invalid' : ''}`}
-                      style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
-                      placeholder="Repite tu nueva contraseña"
-                      value={confirmarNuevaContrasena}
-                      onChange={(evento) => setConfirmarNuevaContrasena(evento.target.value)}
-                      disabled={estaEnviando}
-                    />
-                    {errores.confirmarNuevaContrasena && (
-                      <div className="invalid-feedback">{errores.confirmarNuevaContrasena}</div>
-                    )}
+                  <div className="col-12 col-sm-6">
+                    <label htmlFor="confirmarNuevaContrasena" className="form-label small fw-semibold">
+                      Confirmar nueva contraseña
+                    </label>
+                    <div className="input-group has-validation">
+                      <span
+                        className="input-group-text border-0"
+                        style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '50px 0 0 50px' }}
+                      >
+                        <Lock size={18} color={COLOR_MARCA} />
+                      </span>
+                      <input
+                        id="confirmarNuevaContrasena"
+                        type={mostrarContrasena ? 'text' : 'password'}
+                        className={`form-control border-0 ${errores.confirmarNuevaContrasena ? 'is-invalid' : ''}`}
+                        style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
+                        placeholder="Repite tu nueva contraseña"
+                        value={confirmarNuevaContrasena}
+                        onChange={(evento) => setConfirmarNuevaContrasena(evento.target.value)}
+                        disabled={estaEnviando}
+                      />
+                      {errores.confirmarNuevaContrasena && (
+                        <div className="invalid-feedback">{errores.confirmarNuevaContrasena}</div>
+                      )}
+                    </div>
                   </div>
                 </div>
 

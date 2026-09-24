@@ -88,11 +88,11 @@ function RegisterPage() {
     }
   }
 
-  return (
+   return (
     <div className="d-flex justify-content-center align-items-start align-items-md-center min-vh-100 py-5 px-3 bg-light">
       <div
         className="bg-white shadow-lg overflow-hidden w-100"
-        style={{ maxWidth: '480px', borderRadius: '28px' }}
+        style={{ maxWidth: '760px', borderRadius: '28px' }}
       >
         {/* Franja curva de branding */}
         <div
@@ -106,128 +106,132 @@ function RegisterPage() {
           <span className="fw-bold">CloudVault</span>
         </div>
 
-        <div className="p-4 p-md-5 pt-4">
+        <div className="p-4 p-md-5 px-md-4 px-lg-5 pt-4">
           <h2 className="fw-bold mb-1 fs-4">Crear cuenta</h2>
           <p className="text-secondary small mb-4">Comienza a gestionar tu infraestructura PaaS.</p>
 
           {errorGeneral && <div className="alert alert-danger">{errorGeneral}</div>}
 
           <form onSubmit={manejarEnvio} noValidate>
-            <div className="mb-3">
-              <label htmlFor="nombreCompleto" className="form-label small fw-semibold">
-                Nombre completo
-              </label>
-              <div className="input-group has-validation">
-                <span
-                  className="input-group-text border-0"
-                  style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '50px 0 0 50px' }}
-                >
-                  <User size={18} color={COLOR_MARCA} />
-                </span>
-                <input
-                  id="nombreCompleto"
-                  type="text"
-                  className={`form-control border-0 ${errores.nombreCompleto ? 'is-invalid' : ''}`}
-                  style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
-                  placeholder="Mily Santay"
-                  value={nombreCompleto}
-                  onChange={(evento) => setNombreCompleto(evento.target.value)}
-                  disabled={estaEnviando}
-                />
-                {errores.nombreCompleto && (
-                  <div className="invalid-feedback">{errores.nombreCompleto}</div>
-                )}
+            <div className="row g-3 mb-3">
+              <div className="col-12 col-sm-6">
+                <label htmlFor="nombreCompleto" className="form-label small fw-semibold">
+                  Nombre completo
+                </label>
+                <div className="input-group has-validation">
+                  <span
+                    className="input-group-text border-0"
+                    style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '50px 0 0 50px' }}
+                  >
+                    <User size={18} color={COLOR_MARCA} />
+                  </span>
+                  <input
+                    id="nombreCompleto"
+                    type="text"
+                    className={`form-control border-0 ${errores.nombreCompleto ? 'is-invalid' : ''}`}
+                    style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
+                    placeholder="Mily Santay"
+                    value={nombreCompleto}
+                    onChange={(evento) => setNombreCompleto(evento.target.value)}
+                    disabled={estaEnviando}
+                  />
+                  {errores.nombreCompleto && (
+                    <div className="invalid-feedback">{errores.nombreCompleto}</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="col-12 col-sm-6">
+                <label htmlFor="correoElectronico" className="form-label small fw-semibold">
+                  Correo electrónico
+                </label>
+                <div className="input-group has-validation">
+                  <span
+                    className="input-group-text border-0"
+                    style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '50px 0 0 50px' }}
+                  >
+                    <Mail size={18} color={COLOR_MARCA} />
+                  </span>
+                  <input
+                    id="correoElectronico"
+                    type="email"
+                    className={`form-control border-0 ${errores.correoElectronico ? 'is-invalid' : ''}`}
+                    style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
+                    placeholder="nombre@empresa.com"
+                    value={correoElectronico}
+                    onChange={(evento) => setCorreoElectronico(evento.target.value)}
+                    disabled={estaEnviando}
+                  />
+                  {errores.correoElectronico && (
+                    <div className="invalid-feedback">{errores.correoElectronico}</div>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="mb-3">
-              <label htmlFor="correoElectronico" className="form-label small fw-semibold">
-                Correo electrónico
-              </label>
-              <div className="input-group has-validation">
-                <span
-                  className="input-group-text border-0"
-                  style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '50px 0 0 50px' }}
-                >
-                  <Mail size={18} color={COLOR_MARCA} />
-                </span>
-                <input
-                  id="correoElectronico"
-                  type="email"
-                  className={`form-control border-0 ${errores.correoElectronico ? 'is-invalid' : ''}`}
-                  style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
-                  placeholder="nombre@empresa.com"
-                  value={correoElectronico}
-                  onChange={(evento) => setCorreoElectronico(evento.target.value)}
-                  disabled={estaEnviando}
-                />
-                {errores.correoElectronico && (
-                  <div className="invalid-feedback">{errores.correoElectronico}</div>
-                )}
+            <div className="row g-3 mb-3">
+              <div className="col-12 col-sm-6">
+                <label htmlFor="contrasena" className="form-label small fw-semibold">
+                  Contraseña
+                </label>
+                <div className="input-group has-validation">
+                  <span
+                    className="input-group-text border-0"
+                    style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '50px 0 0 50px' }}
+                  >
+                    <Lock size={18} color={COLOR_MARCA} />
+                  </span>
+                  <input
+                    id="contrasena"
+                    type={mostrarContrasena ? 'text' : 'password'}
+                    className={`form-control border-0 ${errores.contrasena ? 'is-invalid' : ''}`}
+                    style={{ backgroundColor: COLOR_ICONO_FONDO }}
+                    placeholder={`Mínimo ${LONGITUD_MINIMA_CONTRASENA} caracteres`}
+                    value={contrasena}
+                    onChange={(evento) => setContrasena(evento.target.value)}
+                    disabled={estaEnviando}
+                  />
+                  <button
+                    type="button"
+                    className="btn border-0"
+                    style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
+                    onClick={() => setMostrarContrasena(!mostrarContrasena)}
+                    disabled={estaEnviando}
+                    aria-label={mostrarContrasena ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  >
+                    {mostrarContrasena ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                  {errores.contrasena && (
+                    <div className="invalid-feedback">{errores.contrasena}</div>
+                  )}
+                </div>
               </div>
-            </div>
 
-            <div className="mb-3">
-              <label htmlFor="contrasena" className="form-label small fw-semibold">
-                Contraseña
-              </label>
-              <div className="input-group has-validation">
-                <span
-                  className="input-group-text border-0"
-                  style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '50px 0 0 50px' }}
-                >
-                  <Lock size={18} color={COLOR_MARCA} />
-                </span>
-                <input
-                  id="contrasena"
-                  type={mostrarContrasena ? 'text' : 'password'}
-                  className={`form-control border-0 ${errores.contrasena ? 'is-invalid' : ''}`}
-                  style={{ backgroundColor: COLOR_ICONO_FONDO }}
-                  placeholder={`Mínimo ${LONGITUD_MINIMA_CONTRASENA} caracteres`}
-                  value={contrasena}
-                  onChange={(evento) => setContrasena(evento.target.value)}
-                  disabled={estaEnviando}
-                />
-                <button
-                  type="button"
-                  className="btn border-0"
-                  style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
-                  onClick={() => setMostrarContrasena(!mostrarContrasena)}
-                  disabled={estaEnviando}
-                  aria-label={mostrarContrasena ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                >
-                  {mostrarContrasena ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-                {errores.contrasena && (
-                  <div className="invalid-feedback">{errores.contrasena}</div>
-                )}
-              </div>
-            </div>
-
-            <div className="mb-3">
-              <label htmlFor="confirmarContrasena" className="form-label small fw-semibold">
-                Confirmar contraseña
-              </label>
-              <div className="input-group has-validation">
-                <span
-                  className="input-group-text border-0"
-                  style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '50px 0 0 50px' }}
-                >
-                  <Lock size={18} color={COLOR_MARCA} />
-                </span>
-                <input
-                  id="confirmarContrasena"
-                  type={mostrarContrasena ? 'text' : 'password'}
-                  className={`form-control border-0 ${errores.confirmarContrasena ? 'is-invalid' : ''}`}
-                  style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
-                  placeholder="Repite tu contraseña"
-                  value={confirmarContrasena}
-                  onChange={(evento) => setConfirmarContrasena(evento.target.value)}
-                  disabled={estaEnviando}
-                />
-                {errores.confirmarContrasena && (
-                  <div className="invalid-feedback">{errores.confirmarContrasena}</div>
-                )}
+              <div className="col-12 col-sm-6">
+                <label htmlFor="confirmarContrasena" className="form-label small fw-semibold">
+                  Confirmar contraseña
+                </label>
+                <div className="input-group has-validation">
+                  <span
+                    className="input-group-text border-0"
+                    style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '50px 0 0 50px' }}
+                  >
+                    <Lock size={18} color={COLOR_MARCA} />
+                  </span>
+                  <input
+                    id="confirmarContrasena"
+                    type={mostrarContrasena ? 'text' : 'password'}
+                    className={`form-control border-0 ${errores.confirmarContrasena ? 'is-invalid' : ''}`}
+                    style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
+                    placeholder="Repite tu contraseña"
+                    value={confirmarContrasena}
+                    onChange={(evento) => setConfirmarContrasena(evento.target.value)}
+                    disabled={estaEnviando}
+                  />
+                  {errores.confirmarContrasena && (
+                    <div className="invalid-feedback">{errores.confirmarContrasena}</div>
+                  )}
+                </div>
               </div>
             </div>
 
