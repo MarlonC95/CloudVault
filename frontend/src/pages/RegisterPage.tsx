@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { User, Mail, Lock, KeyRound, Eye, EyeOff, Cloud } from 'lucide-react'
 import { registrarUsuario } from '../services/authService'
+import { useNavigate } from 'react-router-dom'
 
 interface ErroresRegistro {
   nombreCompleto?: string
@@ -30,6 +31,7 @@ function RegisterPage() {
   const [errores, setErrores] = useState<ErroresRegistro>({})
   const [estaEnviando, setEstaEnviando] = useState(false)
   const [errorGeneral, setErrorGeneral] = useState('')
+  const navegar = useNavigate()
 
   function validar(): ErroresRegistro {
     const erroresEncontrados: ErroresRegistro = {}
@@ -79,8 +81,8 @@ function RegisterPage() {
     setErrorGeneral('')
 
     try {
-      await registrarUsuario({ nombreCompleto, correoElectronico, contrasena, palabraSecreta })
-      console.log('Registro exitoso')
+     await registrarUsuario({ nombreCompleto, correoElectronico, contrasena, palabraSecreta })
+      navegar('/login')
       // TODO: redirigir al login o al dashboard cuando exista esa pantalla
     } catch (error) {
       setErrorGeneral('Ocurrió un error al registrar tu cuenta. Intenta de nuevo.')

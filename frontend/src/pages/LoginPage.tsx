@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Cloud, Mail, Lock, Eye, EyeOff, ChevronRight } from 'lucide-react'
 import { iniciarSesion } from '../services/authService'
+import { useNavigate } from 'react-router-dom'
 
 interface ErroresLogin {
   correoElectronico?: string
@@ -20,6 +21,7 @@ function LoginPage() {
   const [errores, setErrores] = useState<ErroresLogin>({})
   const [estaEnviando, setEstaEnviando] = useState(false)
   const [errorGeneral, setErrorGeneral] = useState('')
+  const navegar = useNavigate()
 
   function validar(): ErroresLogin {
     const erroresEncontrados: ErroresLogin = {}
@@ -49,15 +51,15 @@ function LoginPage() {
     setErrorGeneral('')
 
     try {
-      const respuesta = await iniciarSesion({ correoElectronico, contrasena })
-      console.log('Login exitoso:', respuesta)
-      // TODO: guardar el token (AuthContext) y redirigir al dashboard
-    } catch (error) {
-      setErrorGeneral('Correo o contraseña incorrectos.')
-    } finally {
-      setEstaEnviando(false)
-    }
+    const respuesta = await iniciarSesion({ correoElectronico, contrasena })
+    console.log('Login exitoso:', respuesta)
+    navegar('/dashboard')
+  } catch (error) {
+    setErrorGeneral('Correo o contraseña incorrectos.')
+  } finally {
+    setEstaEnviando(false)
   }
+}
 
   return (
    <div
