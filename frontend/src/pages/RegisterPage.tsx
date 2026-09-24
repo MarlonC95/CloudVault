@@ -16,6 +16,7 @@ const LONGITUD_MINIMA_CONTRASENA = 8
 const COLOR_MARCA = '#2563EB'
 const COLOR_NAVY = '#0F172A'
 const COLOR_ICONO_FONDO = '#EFF4FF'
+const COLOR_FONDO_PAGINA = '#F1F5F9'
 
 function RegisterPage() {
   const [nombreCompleto, setNombreCompleto] = useState('')
@@ -89,7 +90,10 @@ function RegisterPage() {
   }
 
    return (
-    <div className="d-flex justify-content-center align-items-start align-items-md-center min-vh-100 py-5 px-3 bg-light">
+    <div
+  className="d-flex justify-content-center align-items-start align-items-md-center min-vh-100 py-5 px-3"
+  style={{ backgroundColor: COLOR_FONDO_PAGINA }}
+    >
       <div
         className="bg-white shadow-lg overflow-hidden w-100"
         style={{ maxWidth: '760px', borderRadius: '28px' }}

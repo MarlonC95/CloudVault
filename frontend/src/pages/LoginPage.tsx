@@ -11,6 +11,7 @@ interface ErroresLogin {
 const COLOR_MARCA = '#2563EB'
 const COLOR_NAVY = '#0F172A'
 const COLOR_ICONO_FONDO = '#EFF4FF'
+const COLOR_FONDO_PAGINA = '#F1F5F9'
 
 function LoginPage() {
   const [correoElectronico, setCorreoElectronico] = useState('')
@@ -59,7 +60,10 @@ function LoginPage() {
   }
 
   return (
-    <div className="d-flex justify-content-center align-items-center min-vh-100 px-3 py-4 bg-light">
+   <div
+  className="d-flex justify-content-center align-items-center min-vh-100 px-3 py-4"
+  style={{ backgroundColor: COLOR_FONDO_PAGINA }}
+  >
       <div
         className="d-flex bg-white shadow-lg overflow-hidden"
         style={{ borderRadius: '28px', maxWidth: '900px', width: '100%' }}
