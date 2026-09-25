@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Cloud,
   Upload,
@@ -8,7 +9,9 @@ import {
   Trash2,
   Zap,
   Shield,
+  LogOut,
 } from 'lucide-react'
+import { cerrarSesion, obtenerSesion } from '../services/authService'
 
 type SeccionExplorador = 'mi-unidad' | 'compartidos' | 'recientes' | 'papelera' | 'planes' | 'administracion'
 
@@ -35,6 +38,13 @@ const ELEMENTOS_GESTION: ElementoMenu[] = [
 
 function DashboardPage() {
   const [seccionActiva, setSeccionActiva] = useState<SeccionExplorador>('mi-unidad')
+  const navegar = useNavigate()
+  const usuario = obtenerSesion()?.usuario
+
+  function manejarSalida() {
+    cerrarSesion()
+    navegar('/login', { replace: true })
+  }
 
   // TODO: reemplazar por datos reales del plan del usuario cuando exista la API
   const almacenamientoUsadoGb = 45
@@ -133,6 +143,12 @@ function DashboardPage() {
 
       {/* Contenido principal: se arma en el siguiente paso */}
       <main className="flex-grow-1 p-4" style={{ backgroundColor: '#F1F5F9' }}>
+        <div className="d-flex justify-content-between align-items-center gap-3 mb-4">
+          <h1 className="fs-4 mb-0">Hola, {usuario?.nombreCompleto}</h1>
+          <button type="button" className="btn btn-outline-secondary d-flex align-items-center gap-2" onClick={manejarSalida}>
+            <LogOut size={18} /> Cerrar sesión
+          </button>
+        </div>
         <p className="text-secondary">Sección activa: {seccionActiva}</p>
         {/* TODO: tabla de archivos, tarjetas de carpetas y panel de detalles */}
       </main>

@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Cloud, Mail, Lock, Eye, EyeOff, ChevronRight } from 'lucide-react'
-import { iniciarSesion } from '../services/authService'
-import { useNavigate } from 'react-router-dom'
+import { ErrorLogin, iniciarSesion } from '../services/authService'
 
 interface ErroresLogin {
   correoElectronico?: string
@@ -22,10 +21,12 @@ function LoginPage() {
   const [estaEnviando, setEstaEnviando] = useState(false)
   const [errorGeneral, setErrorGeneral] = useState('')
   const navegar = useNavigate()
+  const ubicacion = useLocation()
+  const registroExitoso = (ubicacion.state as { registroExitoso?: boolean } | null)?.registroExitoso === true
 
   function validar(): ErroresLogin {
     const erroresEncontrados: ErroresLogin = {}
-    const formatoCorreoValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoElectronico)
+    const formatoCorreoValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoElectronico.trim())
 
     if (!correoElectronico.trim()) {
       erroresEncontrados.correoElectronico = 'El correo es obligatorio'
@@ -51,15 +52,23 @@ function LoginPage() {
     setErrorGeneral('')
 
     try {
-    const respuesta = await iniciarSesion({ correoElectronico, contrasena })
-    console.log('Login exitoso:', respuesta)
-    navegar('/dashboard')
-  } catch (error) {
-    setErrorGeneral('Correo o contraseña incorrectos.')
-  } finally {
-    setEstaEnviando(false)
+      await iniciarSesion({ correoElectronico, contrasena })
+      setContrasena('')
+      navegar('/dashboard', { replace: true })
+    } catch (error) {
+      if (error instanceof ErrorLogin) {
+        setErrores({
+          correoElectronico: error.campos.correo?.[0],
+          contrasena: error.campos.contrasena?.[0],
+        })
+        setErrorGeneral(error.campos.non_field_errors?.[0] ?? error.message)
+      } else {
+        setErrorGeneral('No se pudo iniciar sesión. Intenta de nuevo.')
+      }
+    } finally {
+      setEstaEnviando(false)
+    }
   }
-}
 
   return (
    <div
@@ -76,6 +85,7 @@ function LoginPage() {
             <h2 className="fw-bold mb-1">¡Hola de nuevo!</h2>
             <p className="text-secondary mb-4">Inicia sesión en tu cuenta</p>
 
+            {registroExitoso && <div className="alert alert-success">Cuenta creada correctamente.</div>}
             {errorGeneral && <div className="alert alert-danger">{errorGeneral}</div>}
 
             <form onSubmit={manejarEnvio} noValidate>
@@ -143,13 +153,7 @@ function LoginPage() {
                 </div>
               </div>
 
-              <div className="d-flex justify-content-between align-items-center mb-4 mt-2 flex-wrap gap-2 px-2">
-                <div className="form-check">
-                  <input className="form-check-input" type="checkbox" id="recordarSesion" />
-                  <label className="form-check-label small" htmlFor="recordarSesion">
-                    Recordarme
-                  </label>
-                </div>
+              <div className="d-flex justify-content-end align-items-center mb-4 mt-2 px-2">
                 <Link to="/recuperar" className="small text-decoration-none" style={{ color: COLOR_MARCA }}>
                   ¿Olvidaste tu contraseña?
                 </Link>
