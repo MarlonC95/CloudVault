@@ -1,0 +1,8 @@
+# ==========================================
+# Almacenamiento de Archivos (Railway Bucket)
+# ==========================================
+AWS_ENDPOINT_URL=https://t3.storageapi.dev
+AWS_REGION=auto
+AWS_STORAGE_BUCKET_NAME=efficient-burrito-hw2gvkf
+AWS_ACCESS_KEY_ID=tid_FfgfzibTFhFLwFeMBdNQCctChmLz_MffnBDarClUgRpjDOzSAQF
+AWS_SECRET_ACCESS_KEY=tsec_V_31EAnT_1lJmycf_VeDc3DPkzAc4y9v2Bgal_Qzc8UbMBzf2Z6LJozHyI2_37bCeko+hF
