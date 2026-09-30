@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, Shield } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, Shield, LogOut } from 'lucide-react'
+import { cerrarSesion, obtenerSesion } from '../services/authService'
 import { COLOR_MARCA, COLOR_NAVY, COLOR_FONDO_PAGINA } from '../theme/colores'
 import { CARPETAS_EJEMPLO, ARCHIVOS_EJEMPLO, CARGAS_EJEMPLO } from '../data/datosEjemplo'
 import type { Archivo } from '../types/archivo'
@@ -36,6 +38,14 @@ function DashboardPage() {
   const [archivoSeleccionado, setArchivoSeleccionado] = useState<Archivo | null>(null)
   const [mostrarModalSubida, setMostrarModalSubida] = useState(false)
   const [cargas, setCargas] = useState(CARGAS_EJEMPLO)
+
+  const navegar = useNavigate()
+  const usuario = obtenerSesion()?.usuario
+
+  function manejarSalida() {
+    cerrarSesion()
+    navegar('/login', { replace: true })
+  }
 
   // TODO: reemplazar por datos reales del plan del usuario cuando exista la API
   const almacenamientoUsadoGb = 45
@@ -131,6 +141,17 @@ function DashboardPage() {
 
       {/* Contenido principal */}
       <main className="flex-grow-1 p-4" style={{ backgroundColor: COLOR_FONDO_PAGINA }}>
+        <div className="d-flex justify-content-between align-items-center gap-3 mb-4">
+          <h1 className="fs-4 mb-0">Hola, {usuario?.nombreCompleto}</h1>
+          <button
+            type="button"
+            className="btn btn-outline-secondary d-flex align-items-center gap-2"
+            onClick={manejarSalida}
+          >
+            <LogOut size={18} /> Cerrar sesión
+          </button>
+        </div>
+
         <BuscadorArchivos valorBusqueda={busqueda} onCambiarBusqueda={setBusqueda} />
 
         <p className="small fw-semibold text-secondary text-uppercase mb-2" style={{ letterSpacing: '0.04em' }}>

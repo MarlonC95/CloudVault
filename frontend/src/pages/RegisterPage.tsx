@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { User, Mail, Lock, KeyRound, Eye, EyeOff, Cloud } from 'lucide-react'
-import { registrarUsuario } from '../services/authService'
-import { useNavigate } from 'react-router-dom'
+import { ErrorRegistro, registrarUsuario } from '../services/authService'
 
 interface ErroresRegistro {
   nombreCompleto?: string
@@ -14,6 +13,9 @@ interface ErroresRegistro {
 }
 
 const LONGITUD_MINIMA_CONTRASENA = 8
+const LONGITUD_MAXIMA_CONTRASENA = 128
+const LONGITUD_MINIMA_PALABRA_SECRETA = 12
+const LONGITUD_MAXIMA_PALABRA_SECRETA = 128
 const COLOR_MARCA = '#2563EB'
 const COLOR_NAVY = '#0F172A'
 const COLOR_ICONO_FONDO = '#EFF4FF'
@@ -35,22 +37,29 @@ function RegisterPage() {
 
   function validar(): ErroresRegistro {
     const erroresEncontrados: ErroresRegistro = {}
-    const formatoCorreoValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoElectronico)
+    const correoNormalizado = correoElectronico.trim()
+    const formatoCorreoValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoNormalizado)
 
     if (!nombreCompleto.trim()) {
       erroresEncontrados.nombreCompleto = 'El nombre es obligatorio'
+    } else if (Array.from(nombreCompleto.trim()).length > 150) {
+      erroresEncontrados.nombreCompleto = 'El nombre no puede superar 150 caracteres'
     }
 
     if (!correoElectronico.trim()) {
       erroresEncontrados.correoElectronico = 'El correo es obligatorio'
+    } else if (Array.from(correoNormalizado).length > 255) {
+      erroresEncontrados.correoElectronico = 'El correo no puede superar 255 caracteres'
     } else if (!formatoCorreoValido) {
       erroresEncontrados.correoElectronico = 'El formato del correo no es válido'
     }
 
     if (!contrasena) {
       erroresEncontrados.contrasena = 'La contraseña es obligatoria'
-    } else if (contrasena.length < LONGITUD_MINIMA_CONTRASENA) {
+    } else if (Array.from(contrasena).length < LONGITUD_MINIMA_CONTRASENA) {
       erroresEncontrados.contrasena = `Debe tener al menos ${LONGITUD_MINIMA_CONTRASENA} caracteres`
+    } else if (Array.from(contrasena).length > LONGITUD_MAXIMA_CONTRASENA) {
+      erroresEncontrados.contrasena = `No puede superar ${LONGITUD_MAXIMA_CONTRASENA} caracteres`
     }
 
     if (!confirmarContrasena) {
@@ -61,6 +70,10 @@ function RegisterPage() {
 
     if (!palabraSecreta.trim()) {
       erroresEncontrados.palabraSecreta = 'La palabra secreta es obligatoria'
+    } else if (Array.from(palabraSecreta).length < LONGITUD_MINIMA_PALABRA_SECRETA) {
+      erroresEncontrados.palabraSecreta = `Debe tener al menos ${LONGITUD_MINIMA_PALABRA_SECRETA} caracteres`
+    } else if (Array.from(palabraSecreta).length > LONGITUD_MAXIMA_PALABRA_SECRETA) {
+      erroresEncontrados.palabraSecreta = `No puede superar ${LONGITUD_MAXIMA_PALABRA_SECRETA} caracteres`
     }
 
     if (!aceptaTerminos) {
@@ -81,17 +94,27 @@ function RegisterPage() {
     setErrorGeneral('')
 
     try {
-     await registrarUsuario({ nombreCompleto, correoElectronico, contrasena, palabraSecreta })
-      navegar('/login')
-      // TODO: redirigir al login o al dashboard cuando exista esa pantalla
+      await registrarUsuario({ nombreCompleto, correoElectronico, contrasena, palabraSecreta })
+      navegar('/login', { state: { registroExitoso: true } })
     } catch (error) {
-      setErrorGeneral('Ocurrió un error al registrar tu cuenta. Intenta de nuevo.')
+      if (error instanceof ErrorRegistro) {
+        const campos = error.campos
+        setErrores({
+          nombreCompleto: campos.nombre_completo?.[0],
+          correoElectronico: campos.correo_electronico?.[0],
+          contrasena: campos.contrasena?.[0],
+          palabraSecreta: campos.palabra_secreta?.[0],
+        })
+        setErrorGeneral(campos.non_field_errors?.[0] ?? error.message)
+      } else {
+        setErrorGeneral('Ocurrió un error al registrar tu cuenta. Intenta de nuevo.')
+      }
     } finally {
       setEstaEnviando(false)
     }
   }
 
-   return (
+  return (
     <div
   className="d-flex justify-content-center align-items-start align-items-md-center min-vh-100 py-5 px-3"
   style={{ backgroundColor: COLOR_FONDO_PAGINA }}

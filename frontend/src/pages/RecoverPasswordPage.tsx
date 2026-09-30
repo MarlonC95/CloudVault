@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { KeyRound, Mail, Lock, Eye, EyeOff, Cloud } from 'lucide-react'
-import { recuperarContrasena } from '../services/authService'
+import { ErrorRecuperacion, recuperarContrasena } from '../services/authService'
 
 interface ErroresRecuperacion {
   correoElectronico?: string
@@ -11,6 +11,8 @@ interface ErroresRecuperacion {
 }
 
 const LONGITUD_MINIMA_CONTRASENA = 8
+const LONGITUD_MAXIMA_CONTRASENA = 128
+const LONGITUD_MAXIMA_PALABRA_SECRETA = 128
 const COLOR_MARCA = '#2563EB'
 const COLOR_NAVY = '#0F172A'
 const COLOR_ICONO_FONDO = '#EFF4FF'
@@ -22,6 +24,7 @@ function RecoverPasswordPage() {
   const [nuevaContrasena, setNuevaContrasena] = useState('')
   const [confirmarNuevaContrasena, setConfirmarNuevaContrasena] = useState('')
   const [mostrarContrasena, setMostrarContrasena] = useState(false)
+  const [mostrarPalabraSecreta, setMostrarPalabraSecreta] = useState(false)
   const [errores, setErrores] = useState<ErroresRecuperacion>({})
   const [estaEnviando, setEstaEnviando] = useState(false)
   const [errorGeneral, setErrorGeneral] = useState('')
@@ -29,22 +32,29 @@ function RecoverPasswordPage() {
 
   function validar(): ErroresRecuperacion {
     const erroresEncontrados: ErroresRecuperacion = {}
-    const formatoCorreoValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoElectronico)
+    const correoNormalizado = correoElectronico.trim()
+    const formatoCorreoValido = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoNormalizado)
 
     if (!correoElectronico.trim()) {
       erroresEncontrados.correoElectronico = 'El correo es obligatorio'
+    } else if (Array.from(correoNormalizado).length > 255) {
+      erroresEncontrados.correoElectronico = 'El correo no puede superar 255 caracteres'
     } else if (!formatoCorreoValido) {
       erroresEncontrados.correoElectronico = 'El formato del correo no es válido'
     }
 
     if (!palabraSecreta.trim()) {
       erroresEncontrados.palabraSecreta = 'Ingresa tu palabra secreta'
+    } else if (Array.from(palabraSecreta).length > LONGITUD_MAXIMA_PALABRA_SECRETA) {
+      erroresEncontrados.palabraSecreta = `No puede superar ${LONGITUD_MAXIMA_PALABRA_SECRETA} caracteres`
     }
 
     if (!nuevaContrasena) {
       erroresEncontrados.nuevaContrasena = 'La nueva contraseña es obligatoria'
-    } else if (nuevaContrasena.length < LONGITUD_MINIMA_CONTRASENA) {
+    } else if (Array.from(nuevaContrasena).length < LONGITUD_MINIMA_CONTRASENA) {
       erroresEncontrados.nuevaContrasena = `Debe tener al menos ${LONGITUD_MINIMA_CONTRASENA} caracteres`
+    } else if (Array.from(nuevaContrasena).length > LONGITUD_MAXIMA_CONTRASENA) {
+      erroresEncontrados.nuevaContrasena = `No puede superar ${LONGITUD_MAXIMA_CONTRASENA} caracteres`
     }
 
     if (!confirmarNuevaContrasena) {
@@ -67,16 +77,32 @@ function RecoverPasswordPage() {
     setErrorGeneral('')
 
     try {
-      await recuperarContrasena({ correoElectronico, palabraSecreta, nuevaContrasena })
+      await recuperarContrasena({ correoElectronico, palabraSecreta, nuevaContrasena, confirmarNuevaContrasena })
+      setPalabraSecreta('')
+      setNuevaContrasena('')
+      setConfirmarNuevaContrasena('')
+      setMostrarPalabraSecreta(false)
+      setMostrarContrasena(false)
       setRecuperacionExitosa(true)
     } catch (error) {
-      setErrorGeneral('El correo o la palabra secreta no coinciden con ningún registro.')
+      if (error instanceof ErrorRecuperacion) {
+        const campos = error.campos
+        setErrores({
+          correoElectronico: campos.correo?.[0],
+          palabraSecreta: campos.palabra_secreta?.[0],
+          nuevaContrasena: campos.nueva_contrasena?.[0],
+          confirmarNuevaContrasena: campos.confirmar_contrasena?.[0],
+        })
+        setErrorGeneral(campos.non_field_errors?.[0] ?? error.message)
+      } else {
+        setErrorGeneral('No se pudo restablecer la contraseña. Intenta de nuevo.')
+      }
     } finally {
       setEstaEnviando(false)
     }
   }
 
-    return (
+  return (
     <div
   className="d-flex justify-content-center align-items-start align-items-md-center min-vh-100 py-5 px-3"
   style={{ backgroundColor: COLOR_FONDO_PAGINA }}
@@ -159,14 +185,24 @@ function RecoverPasswordPage() {
                     </span>
                     <input
                       id="palabraSecreta"
-                      type="text"
+                      type={mostrarPalabraSecreta ? 'text' : 'password'}
                       className={`form-control border-0 ${errores.palabraSecreta ? 'is-invalid' : ''}`}
-                      style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
+                      style={{ backgroundColor: COLOR_ICONO_FONDO }}
                       placeholder="La que ingresaste al registrarte"
                       value={palabraSecreta}
                       onChange={(evento) => setPalabraSecreta(evento.target.value)}
                       disabled={estaEnviando}
                     />
+                    <button
+                      type="button"
+                      className="btn border-0"
+                      style={{ backgroundColor: COLOR_ICONO_FONDO, borderRadius: '0 50px 50px 0' }}
+                      onClick={() => setMostrarPalabraSecreta(!mostrarPalabraSecreta)}
+                      disabled={estaEnviando}
+                      aria-label={mostrarPalabraSecreta ? 'Ocultar palabra secreta' : 'Mostrar palabra secreta'}
+                    >
+                      {mostrarPalabraSecreta ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                     {errores.palabraSecreta && (
                       <div className="invalid-feedback">{errores.palabraSecreta}</div>
                     )}

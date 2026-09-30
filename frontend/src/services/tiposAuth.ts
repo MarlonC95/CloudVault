@@ -26,4 +26,5 @@ export interface DatosRecuperacion {
   correoElectronico: string
   palabraSecreta: string
   nuevaContrasena: string
+  confirmarNuevaContrasena: string
 }
