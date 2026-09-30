@@ -1,19 +1,16 @@
 import { useState } from 'react'
-import {
-  Cloud,
-  Upload,
-  HardDrive,
-  Users,
-  Clock,
-  Trash2,
-  Zap,
-  Shield,
-} from 'lucide-react'
+import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, Shield } from 'lucide-react'
+import { COLOR_MARCA, COLOR_NAVY, COLOR_FONDO_PAGINA } from '../theme/colores'
+import { CARPETAS_EJEMPLO, ARCHIVOS_EJEMPLO, CARGAS_EJEMPLO } from '../data/datosEjemplo'
+import type { Archivo } from '../types/archivo'
+import BuscadorArchivos from '../components/dashboard/BuscadorArchivos'
+import TarjetaCarpeta from '../components/dashboard/TarjetaCarpeta'
+import TablaArchivos from '../components/dashboard/TablaArchivos'
+import PanelDetalleArchivo from '../components/dashboard/PanelDetalleArchivo'
+import NotificacionCargas from '../components/dashboard/NotificacionCargas'
+import ModalSubirArchivo from '../components/dashboard/ModalSubirArchivo'
 
 type SeccionExplorador = 'mi-unidad' | 'compartidos' | 'recientes' | 'papelera' | 'planes' | 'administracion'
-
-const COLOR_MARCA = '#2563EB'
-const COLOR_NAVY = '#0F172A'
 
 interface ElementoMenu {
   id: SeccionExplorador
@@ -35,11 +32,19 @@ const ELEMENTOS_GESTION: ElementoMenu[] = [
 
 function DashboardPage() {
   const [seccionActiva, setSeccionActiva] = useState<SeccionExplorador>('mi-unidad')
+  const [busqueda, setBusqueda] = useState('')
+  const [archivoSeleccionado, setArchivoSeleccionado] = useState<Archivo | null>(null)
+  const [mostrarModalSubida, setMostrarModalSubida] = useState(false)
+  const [cargas, setCargas] = useState(CARGAS_EJEMPLO)
 
   // TODO: reemplazar por datos reales del plan del usuario cuando exista la API
   const almacenamientoUsadoGb = 45
   const almacenamientoTotalGb = 100
   const porcentajeUsado = (almacenamientoUsadoGb / almacenamientoTotalGb) * 100
+
+  const archivosFiltrados = ARCHIVOS_EJEMPLO.filter((archivo) =>
+    archivo.nombre.toLowerCase().includes(busqueda.toLowerCase())
+  )
 
   function renderizarBotonMenu(elemento: ElementoMenu) {
     const estaActivo = seccionActiva === elemento.id
@@ -49,10 +54,11 @@ function DashboardPage() {
         type="button"
         className="btn d-flex align-items-center gap-2 w-100 text-start mb-1 border-0"
         style={{
-          backgroundColor: estaActivo ? 'rgba(255,255,255,0.1)' : 'transparent',
+          backgroundColor: estaActivo ? 'rgba(37,99,235,0.18)' : 'transparent',
           color: estaActivo ? '#FFFFFF' : 'rgba(255,255,255,0.7)',
-          borderRadius: '10px',
-          padding: '10px 14px',
+          borderLeft: estaActivo ? `3px solid ${COLOR_MARCA}` : '3px solid transparent',
+          borderRadius: '0 10px 10px 0',
+          padding: '10px 11px',
         }}
         onClick={() => setSeccionActiva(elemento.id)}
       >
@@ -78,64 +84,91 @@ function DashboardPage() {
           type="button"
           className="btn w-100 d-flex justify-content-center align-items-center gap-2 text-white fw-semibold mb-4"
           style={{ backgroundColor: COLOR_MARCA, borderRadius: '10px', padding: '10px' }}
+          onClick={() => setMostrarModalSubida(true)}
         >
           <Upload size={18} />
           Subir Archivo
         </button>
 
-        <div className="text-uppercase small fw-semibold px-2 mb-2" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}>
+        <div
+          className="text-uppercase small fw-semibold px-2 mb-2"
+          style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}
+        >
           Explorador
         </div>
         {ELEMENTOS_EXPLORADOR.map(renderizarBotonMenu)}
 
-        <div className="text-uppercase small fw-semibold px-2 mb-2 mt-4" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}>
+        <div
+          className="text-uppercase small fw-semibold px-2 mb-2 mt-4"
+          style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}
+        >
           Gestión
         </div>
         {ELEMENTOS_GESTION.map(renderizarBotonMenu)}
 
         <div className="mt-auto pt-4">
-          <div
-            className="p-3"
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}
-          >
+          <div className="p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
             <div className="d-flex justify-content-between small mb-2">
               <span className="fw-semibold">Almacenamiento</span>
               <span style={{ color: 'rgba(255,255,255,0.6)' }}>
                 {almacenamientoUsadoGb}/{almacenamientoTotalGb} GB
               </span>
             </div>
-            <div
-              className="mb-2"
-              style={{ height: '6px', borderRadius: '3px', backgroundColor: 'rgba(255,255,255,0.15)' }}
-            >
+            <div className="mb-2" style={{ height: '6px', borderRadius: '3px', backgroundColor: 'rgba(255,255,255,0.15)' }}>
               <div
-                style={{
-                  height: '100%',
-                  width: `${porcentajeUsado}%`,
-                  borderRadius: '3px',
-                  backgroundColor: COLOR_MARCA,
-                }}
+                style={{ height: '100%', width: `${porcentajeUsado}%`, borderRadius: '3px', backgroundColor: COLOR_MARCA }}
               />
             </div>
             <p className="small mb-3" style={{ color: 'rgba(255,255,255,0.5)' }}>
               {almacenamientoTotalGb - almacenamientoUsadoGb} GB disponibles
             </p>
-            <button
-              type="button"
-              className="btn btn-outline-light w-100 btn-sm fw-semibold"
-              style={{ borderRadius: '8px' }}
-            >
+            <button type="button" className="btn btn-outline-light w-100 btn-sm fw-semibold" style={{ borderRadius: '8px' }}>
               Ampliar Plan
             </button>
           </div>
         </div>
       </aside>
 
-      {/* Contenido principal: se arma en el siguiente paso */}
-      <main className="flex-grow-1 p-4" style={{ backgroundColor: '#F1F5F9' }}>
-        <p className="text-secondary">Sección activa: {seccionActiva}</p>
-        {/* TODO: tabla de archivos, tarjetas de carpetas y panel de detalles */}
+      {/* Contenido principal */}
+      <main className="flex-grow-1 p-4" style={{ backgroundColor: COLOR_FONDO_PAGINA }}>
+        <BuscadorArchivos valorBusqueda={busqueda} onCambiarBusqueda={setBusqueda} />
+
+        <p className="small fw-semibold text-secondary text-uppercase mb-2" style={{ letterSpacing: '0.04em' }}>
+          Carpetas principales
+        </p>
+        <div className="row g-3 mb-4">
+          {CARPETAS_EJEMPLO.map((carpeta) => (
+            <div key={carpeta.id} className="col-12 col-md-4">
+              <TarjetaCarpeta carpeta={carpeta} />
+            </div>
+          ))}
+        </div>
+
+        <div className="row g-3">
+          <div className="col-12 col-xl-8">
+            <TablaArchivos
+              archivos={archivosFiltrados}
+              archivoSeleccionadoId={archivoSeleccionado?.id ?? null}
+              onSeleccionarArchivo={setArchivoSeleccionado}
+            />
+          </div>
+          <div className="col-12 col-xl-4">
+            <PanelDetalleArchivo archivo={archivoSeleccionado} />
+          </div>
+        </div>
       </main>
+
+      <NotificacionCargas cargas={cargas} onCerrar={() => setCargas([])} />
+
+      <ModalSubirArchivo
+        visible={mostrarModalSubida}
+        onCerrar={() => setMostrarModalSubida(false)}
+        onConfirmarSubida={(archivos) => {
+          console.log('Archivos a subir:', archivos)
+          // TODO(backend): reemplazar por la llamada real de subida a la API
+          setMostrarModalSubida(false)
+        }}
+      />
     </div>
   )
 }
