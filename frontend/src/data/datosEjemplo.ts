@@ -1,9 +1,9 @@
 import type { Archivo, Carpeta, CargaEnProgreso } from '../types/archivo'
 
 export const CARPETAS_EJEMPLO: Carpeta[] = [
-  { id: 'documentos', nombre: 'Documentos', cantidadArchivos: 38, color: '#2563EB', colorFondo: '#DBEAFE' },
-  { id: 'proyectos', nombre: 'Proyectos', cantidadArchivos: 12, color: '#7C3AED', colorFondo: '#EDE9FE' },
-  { id: 'imagenes', nombre: 'Imágenes', cantidadArchivos: 95, color: '#059669', colorFondo: '#D1FAE5' },
+  { id: 'documentos', nombre: 'Documentos', cantidadArchivos: 38, color: '#2563EB', colorFondo: '#EFF6FF' },
+  { id: 'proyectos', nombre: 'Proyectos', cantidadArchivos: 12, color: '#7C3AED', colorFondo: '#F5F3FF' },
+  { id: 'imagenes', nombre: 'Imágenes', cantidadArchivos: 95, color: '#0D9488', colorFondo: '#F0FDFA' },
 ]
 
 export const ARCHIVOS_EJEMPLO: Archivo[] = [

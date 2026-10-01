@@ -5,43 +5,52 @@ import type { CargaEnProgreso } from '../../types/archivo'
 
 interface NotificacionCargasProps {
   cargas: CargaEnProgreso[]
-  onCerrar: () => void
 }
 
-function NotificacionCargas({ cargas, onCerrar }: NotificacionCargasProps) {
-  const [estaExpandida, setEstaExpandida] = useState(true)
-
+function NotificacionCargas({ cargas }: NotificacionCargasProps) {
+const [estaExpandida, setEstaExpandida] = useState(false)
   if (cargas.length === 0) return null
 
   return (
     <div
       className="position-fixed text-white shadow-lg"
-      style={{ bottom: '20px', right: '20px', width: '320px', backgroundColor: COLOR_NAVY, borderRadius: '14px', zIndex: 1050 }}
+      style={{
+        bottom: '20px',
+        right: '20px',
+        width: estaExpandida ? '320px' : 'auto',
+        backgroundColor: COLOR_NAVY,
+        borderRadius: '14px',
+        zIndex: 1050,
+      }}
     >
-      <div className="d-flex justify-content-between align-items-center px-3 py-3">
-        <div className="d-flex align-items-center gap-2 fw-semibold small">
+      <button
+        type="button"
+        className="btn d-flex justify-content-between align-items-center w-100 px-3 py-3 text-white border-0"
+        onClick={() => setEstaExpandida(!estaExpandida)}
+      >
+        <span className="d-flex align-items-center gap-2 fw-semibold small">
           <Upload size={16} />
           Subiendo {cargas.length} archivos...
-        </div>
-        <div className="d-flex align-items-center gap-1">
-          <button
-            type="button"
-            className="btn btn-sm p-1 text-white"
-            onClick={() => setEstaExpandida(!estaExpandida)}
-            aria-label={estaExpandida ? 'Contraer' : 'Expandir'}
-          >
-            {estaExpandida ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-          </button>
-          <button type="button" className="btn btn-sm p-1 text-white" onClick={onCerrar} aria-label="Cerrar">
-            <X size={16} />
-          </button>
-        </div>
-      </div>
+        </span>
+        <span className="d-flex align-items-center gap-1 ms-3">
+          {estaExpandida ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        </span>
+      </button>
 
       {estaExpandida && (
         <div className="px-3 pb-3" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <div className="d-flex justify-content-end pt-2">
+            <button
+              type="button"
+              className="btn btn-sm p-1 text-white"
+              onClick={() => setEstaExpandida(false)}
+              aria-label="Minimizar"
+            >
+              <X size={14} />
+            </button>
+          </div>
           {cargas.map((carga) => (
-            <div key={carga.id} className="pt-3">
+            <div key={carga.id} className="pt-1">
               <div className="d-flex justify-content-between small mb-1">
                 <span className="text-truncate" style={{ maxWidth: '200px' }}>
                   {carga.nombreArchivo}

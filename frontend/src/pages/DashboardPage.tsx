@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, Shield, LogOut } from 'lucide-react'
+import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, Shield } from 'lucide-react'
 import { cerrarSesion, obtenerSesion } from '../services/authService'
 import { COLOR_MARCA, COLOR_NAVY, COLOR_FONDO_PAGINA } from '../theme/colores'
 import { CARPETAS_EJEMPLO, ARCHIVOS_EJEMPLO, CARGAS_EJEMPLO } from '../data/datosEjemplo'
 import type { Archivo } from '../types/archivo'
+import BarraSuperior from '../components/dashboard/BarraSuperior'
 import BuscadorArchivos from '../components/dashboard/BuscadorArchivos'
 import TarjetaCarpeta from '../components/dashboard/TarjetaCarpeta'
 import TablaArchivos from '../components/dashboard/TablaArchivos'
@@ -37,7 +38,7 @@ function DashboardPage() {
   const [busqueda, setBusqueda] = useState('')
   const [archivoSeleccionado, setArchivoSeleccionado] = useState<Archivo | null>(null)
   const [mostrarModalSubida, setMostrarModalSubida] = useState(false)
-  const [cargas, setCargas] = useState(CARGAS_EJEMPLO)
+  const [cargas] = useState(CARGAS_EJEMPLO)
 
   const navegar = useNavigate()
   const usuario = obtenerSesion()?.usuario
@@ -62,10 +63,11 @@ function DashboardPage() {
       <button
         key={elemento.id}
         type="button"
-        className="btn d-flex align-items-center gap-2 w-100 text-start mb-1 border-0"
+        className="btn d-flex align-items-center gap-2 w-100 text-start mb-1"
         style={{
           backgroundColor: estaActivo ? 'rgba(37,99,235,0.18)' : 'transparent',
           color: estaActivo ? '#FFFFFF' : 'rgba(255,255,255,0.7)',
+          border: 'none',
           borderLeft: estaActivo ? `3px solid ${COLOR_MARCA}` : '3px solid transparent',
           borderRadius: '0 10px 10px 0',
           padding: '10px 11px',
@@ -79,11 +81,11 @@ function DashboardPage() {
   }
 
   return (
-    <div className="d-flex" style={{ minHeight: '100vh' }}>
-      {/* Sidebar */}
+    <div className="d-flex" style={{ height: '100vh', overflow: 'hidden' }}>
+      {/* Sidebar: altura fija, no se mueve */}
       <aside
         className="d-none d-lg-flex flex-column p-3 text-white flex-shrink-0"
-        style={{ width: '260px', backgroundColor: COLOR_NAVY }}
+        style={{ width: '260px', height: '100vh', backgroundColor: COLOR_NAVY, overflowY: 'auto' }}
       >
         <div className="d-flex align-items-center gap-2 mb-4 px-2">
           <Cloud size={26} color={COLOR_MARCA} />
@@ -139,47 +141,39 @@ function DashboardPage() {
         </div>
       </aside>
 
-      {/* Contenido principal */}
-      <main className="flex-grow-1 p-4" style={{ backgroundColor: COLOR_FONDO_PAGINA }}>
-        <div className="d-flex justify-content-between align-items-center gap-3 mb-4">
-          <h1 className="fs-4 mb-0">Hola, {usuario?.nombreCompleto}</h1>
-          <button
-            type="button"
-            className="btn btn-outline-secondary d-flex align-items-center gap-2"
-            onClick={manejarSalida}
-          >
-            <LogOut size={18} /> Cerrar sesión
-          </button>
-        </div>
+      {/* Columna derecha: barra superior fija + contenido con scroll único */}
+      <div className="d-flex flex-column flex-grow-1" style={{ height: '100vh', overflow: 'hidden', minWidth: 0 }}>
+        <BarraSuperior nombreUsuario={usuario?.nombreCompleto ?? 'Usuario'} onCerrarSesion={manejarSalida} />
 
-        <BuscadorArchivos valorBusqueda={busqueda} onCambiarBusqueda={setBusqueda} />
+               <main style={{ flex: 1, padding: 28, display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0, overflowY: 'auto' }}>
+          <BuscadorArchivos valorBusqueda={busqueda} onCambiarBusqueda={setBusqueda} />
 
-        <p className="small fw-semibold text-secondary text-uppercase mb-2" style={{ letterSpacing: '0.04em' }}>
-          Carpetas principales
-        </p>
-        <div className="row g-3 mb-4">
-          {CARPETAS_EJEMPLO.map((carpeta) => (
-            <div key={carpeta.id} className="col-12 col-md-4">
-              <TarjetaCarpeta carpeta={carpeta} />
+          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#64748B', letterSpacing: '0.07em', marginBottom: 12 }}>
+                  CARPETAS PRINCIPALES
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                  {CARPETAS_EJEMPLO.map((carpeta) => (
+                    <TarjetaCarpeta key={carpeta.id} carpeta={carpeta} />
+                  ))}
+                </div>
+              </div>
+
+              <TablaArchivos
+                archivos={archivosFiltrados}
+                archivoSeleccionadoId={archivoSeleccionado?.id ?? null}
+                onSeleccionarArchivo={setArchivoSeleccionado}
+              />
             </div>
-          ))}
-        </div>
 
-        <div className="row g-3">
-          <div className="col-12 col-xl-8">
-            <TablaArchivos
-              archivos={archivosFiltrados}
-              archivoSeleccionadoId={archivoSeleccionado?.id ?? null}
-              onSeleccionarArchivo={setArchivoSeleccionado}
-            />
-          </div>
-          <div className="col-12 col-xl-4">
             <PanelDetalleArchivo archivo={archivoSeleccionado} />
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
 
-      <NotificacionCargas cargas={cargas} onCerrar={() => setCargas([])} />
+      <NotificacionCargas cargas={cargas} />
 
       <ModalSubirArchivo
         visible={mostrarModalSubida}
