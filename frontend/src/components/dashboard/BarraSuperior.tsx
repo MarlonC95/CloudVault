@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import { User, LogOut } from 'lucide-react'
 import { COLOR_MARCA, COLOR_ICONO_FONDO, COLOR_NAVY } from '../../theme/colores'
 
@@ -29,6 +30,8 @@ function BotonIcono({
 }
 
 function BarraSuperior({ nombreUsuario, onCerrarSesion }: BarraSuperiorProps) {
+  const navegar = useNavigate()
+
   return (
     <header
       className="d-flex justify-content-between align-items-center px-4 flex-shrink-0"
@@ -41,6 +44,7 @@ function BarraSuperior({ nombreUsuario, onCerrarSesion }: BarraSuperiorProps) {
       <div className="d-flex align-items-center gap-2">
         <button
           type="button"
+          onClick={() => navegar('/perfil')}
           className="btn d-flex align-items-center gap-2 fw-semibold flex-shrink-0 text-truncate"
           style={{
             backgroundColor: COLOR_ICONO_FONDO,

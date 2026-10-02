@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MoreVertical, Download, Eye, Users, Trash2 } from 'lucide-react'
+import { MoreVertical, Download, Eye, Users, Trash2, FolderInput } from 'lucide-react'
 import { obtenerConfiguracionTipoArchivo } from '../../utils/tiposArchivo'
 import type { Archivo } from '../../types/archivo'
 
@@ -10,6 +10,8 @@ interface TablaArchivosProps {
   onDescargar: (archivo: Archivo) => void
   onCompartir: (archivo: Archivo) => void
   onEliminar: (archivo: Archivo) => void
+  onMover: (archivo: Archivo) => void
+  titulo?: string
 }
 
 const ESTILO_TH: React.CSSProperties = {
@@ -23,6 +25,21 @@ const ESTILO_TH: React.CSSProperties = {
   whiteSpace: 'nowrap',
 }
 
+const ESTILO_ITEM_MENU: React.CSSProperties = {
+  width: '100%',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 9,
+  padding: '10px 14px',
+  background: 'transparent',
+  border: 'none',
+  cursor: 'pointer',
+  fontSize: 13,
+  color: '#374151',
+  textAlign: 'left',
+  whiteSpace: 'nowrap',
+}
+
 function TablaArchivos({
   archivos,
   archivoSeleccionadoId,
@@ -30,6 +47,8 @@ function TablaArchivos({
   onDescargar,
   onCompartir,
   onEliminar,
+  onMover,
+  titulo = 'TODOS LOS ARCHIVOS',
 }: TablaArchivosProps) {
   const [menuAbiertoId, setMenuAbiertoId] = useState<string | null>(null)
 
@@ -45,7 +64,7 @@ function TablaArchivos({
         }}
       >
         <p style={{ fontSize: 11, fontWeight: 700, color: '#64748B', letterSpacing: '0.07em', margin: 0 }}>
-          TODOS LOS ARCHIVOS
+          {titulo}
         </p>
         <span style={{ fontSize: 12, color: '#94A3B8' }}>Actualizado hace 2 min</span>
       </div>
@@ -180,7 +199,9 @@ function TablaArchivos({
                             boxShadow: '0 4px 16px rgba(15,23,42,0.10)',
                             zIndex: 60,
                             overflow: 'hidden',
-                            minWidth: 168,
+                            width: 190,
+                            display: 'flex',
+                            flexDirection: 'column',
                           }}
                         >
                           <button
@@ -189,19 +210,7 @@ function TablaArchivos({
                               onSeleccionarArchivo(archivo)
                               setMenuAbiertoId(null)
                             }}
-                            style={{
-                              width: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 9,
-                              padding: '10px 14px',
-                              background: 'transparent',
-                              border: 'none',
-                              cursor: 'pointer',
-                              fontSize: 13,
-                              color: '#374151',
-                              textAlign: 'left',
-                            }}
+                            style={ESTILO_ITEM_MENU}
                           >
                             <Eye size={13} strokeWidth={1.9} /> Vista previa
                           </button>
@@ -211,21 +220,19 @@ function TablaArchivos({
                               onCompartir(archivo)
                               setMenuAbiertoId(null)
                             }}
-                            style={{
-                              width: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 9,
-                              padding: '10px 14px',
-                              background: 'transparent',
-                              border: 'none',
-                              cursor: 'pointer',
-                              fontSize: 13,
-                              color: '#374151',
-                              textAlign: 'left',
-                            }}
+                            style={ESTILO_ITEM_MENU}
                           >
                             <Users size={13} strokeWidth={1.9} /> Compartir
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onMover(archivo)
+                              setMenuAbiertoId(null)
+                            }}
+                            style={ESTILO_ITEM_MENU}
+                          >
+                            <FolderInput size={13} strokeWidth={1.9} /> Mover a carpeta
                           </button>
                           <button
                             type="button"
@@ -233,19 +240,7 @@ function TablaArchivos({
                               onEliminar(archivo)
                               setMenuAbiertoId(null)
                             }}
-                            style={{
-                              width: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 9,
-                              padding: '10px 14px',
-                              background: 'transparent',
-                              border: 'none',
-                              cursor: 'pointer',
-                              fontSize: 13,
-                              color: '#DC2626',
-                              textAlign: 'left',
-                            }}
+                            style={{ ...ESTILO_ITEM_MENU, color: '#DC2626' }}
                           >
                             <Trash2 size={13} strokeWidth={1.9} /> Eliminar
                           </button>

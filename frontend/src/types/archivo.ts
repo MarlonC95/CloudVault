@@ -9,12 +9,13 @@ export interface Archivo {
   propietario: string
   cifrado: boolean
   esNuevo?: boolean
+  enPapelera?: boolean
+  carpetaId: string | null
 }
 
 export interface Carpeta {
   id: string
   nombre: string
-  cantidadArchivos: number
   color: string
   colorFondo: string
 }

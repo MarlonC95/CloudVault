@@ -3,14 +3,18 @@ import type { Carpeta } from '../../types/archivo'
 
 interface TarjetaCarpetaProps {
   carpeta: Carpeta
+  cantidadArchivos: number
+  estaActiva: boolean
+  onClick: () => void
 }
 
-function TarjetaCarpeta({ carpeta }: TarjetaCarpetaProps) {
+function TarjetaCarpeta({ carpeta, cantidadArchivos, estaActiva, onClick }: TarjetaCarpetaProps) {
   return (
     <div
+      onClick={onClick}
       style={{
-        background: '#fff',
-        border: '1px solid #E2E8F0',
+        background: estaActiva ? carpeta.colorFondo : '#fff',
+        border: `1.5px solid ${estaActiva ? carpeta.color : '#E2E8F0'}`,
         borderRadius: 12,
         padding: '16px 18px',
         display: 'flex',
@@ -35,7 +39,9 @@ function TarjetaCarpeta({ carpeta }: TarjetaCarpetaProps) {
       </div>
       <div style={{ minWidth: 0 }}>
         <p style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', margin: 0 }}>{carpeta.nombre}</p>
-        <p style={{ fontSize: 12, color: '#94A3B8', margin: '2px 0 0' }}>{carpeta.cantidadArchivos} archivos</p>
+        <p style={{ fontSize: 12, color: '#94A3B8', margin: '2px 0 0' }}>
+          {cantidadArchivos} archivo{cantidadArchivos === 1 ? '' : 's'}
+        </p>
       </div>
       <ChevronRight size={15} color="#CBD5E1" strokeWidth={2} style={{ marginLeft: 'auto', flexShrink: 0 }} />
     </div>

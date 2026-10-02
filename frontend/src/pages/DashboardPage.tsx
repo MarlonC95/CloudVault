@@ -1,69 +1,57 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, Shield } from 'lucide-react'
-import { cerrarSesion, obtenerSesion } from '../services/authService'
-import { COLOR_MARCA, COLOR_NAVY, COLOR_FONDO_PAGINA } from '../theme/colores'
+import { ChevronLeft, Folder as FolderIcon } from 'lucide-react'
 import { CARPETAS_EJEMPLO, ARCHIVOS_EJEMPLO, CARGAS_EJEMPLO } from '../data/datosEjemplo'
 import { cumpleRangoFecha, cumpleRangoTamano } from '../utils/filtrosArchivos'
+import { obtenerTipoArchivoPorNombre, formatearTamanoBytes } from '../utils/formatoArchivo'
+import { obtenerSesion } from '../services/authService'
 import type { RangoFecha, RangoTamano } from '../utils/filtrosArchivos'
-import type { Archivo, TipoArchivo } from '../types/archivo'
-import BarraSuperior from '../components/dashboard/BarraSuperior'
+import type { Archivo, Carpeta, TipoArchivo } from '../types/archivo'
+import DashboardLayout from '../components/layout/DashboardLayout'
 import BuscadorArchivos from '../components/dashboard/BuscadorArchivos'
 import TarjetaCarpeta from '../components/dashboard/TarjetaCarpeta'
+import TarjetaNuevaCarpeta from '../components/dashboard/TarjetaNuevaCarpeta'
+import ModalNuevaCarpeta from '../components/dashboard/ModalNuevaCarpeta'
 import TablaArchivos from '../components/dashboard/TablaArchivos'
 import PanelDetalleArchivo from '../components/dashboard/PanelDetalleArchivo'
 import NotificacionCargas from '../components/dashboard/NotificacionCargas'
 import ModalSubirArchivo from '../components/dashboard/ModalSubirArchivo'
 import ModalCompartir from '../components/dashboard/ModalCompartir'
+import ModalMoverArchivo from '../components/dashboard/ModalMoverArchivo'
 
-type SeccionExplorador = 'mi-unidad' | 'compartidos' | 'recientes' | 'papelera' | 'planes' | 'administracion'
 type FiltroTipo = TipoArchivo | 'todos'
 
-interface ElementoMenu {
-  id: SeccionExplorador
-  etiqueta: string
-  icono: React.ReactNode
-}
-
-const ELEMENTOS_EXPLORADOR: ElementoMenu[] = [
-  { id: 'mi-unidad', etiqueta: 'Mi Unidad', icono: <HardDrive size={18} /> },
-  { id: 'compartidos', etiqueta: 'Compartidos conmigo', icono: <Users size={18} /> },
-  { id: 'recientes', etiqueta: 'Recientes', icono: <Clock size={18} /> },
-]
-
-const ELEMENTOS_GESTION: ElementoMenu[] = [
-  { id: 'papelera', etiqueta: 'Papelera', icono: <Trash2 size={18} /> },
-  { id: 'planes', etiqueta: 'Planes', icono: <Zap size={18} /> },
-  { id: 'administracion', etiqueta: 'Administración', icono: <Shield size={18} /> },
+const COLORES_CARPETA_NUEVA = [
+  { color: '#DB2777', colorFondo: '#FDF2F8' },
+  { color: '#CA8A04', colorFondo: '#FEFCE8' },
+  { color: '#059669', colorFondo: '#ECFDF5' },
 ]
 
 function DashboardPage() {
-  const [seccionActiva, setSeccionActiva] = useState<SeccionExplorador>('mi-unidad')
+  const [carpetas, setCarpetas] = useState<Carpeta[]>(CARPETAS_EJEMPLO)
   const [archivos, setArchivos] = useState<Archivo[]>(ARCHIVOS_EJEMPLO)
+  const [carpetaActivaId, setCarpetaActivaId] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
   const [filtroFecha, setFiltroFecha] = useState<RangoFecha>('cualquiera')
   const [filtroTamano, setFiltroTamano] = useState<RangoTamano>('cualquiera')
   const [archivoSeleccionado, setArchivoSeleccionado] = useState<Archivo | null>(null)
   const [archivoParaCompartir, setArchivoParaCompartir] = useState<Archivo | null>(null)
+  const [archivoParaMover, setArchivoParaMover] = useState<Archivo | null>(null)
   const [mostrarModalSubida, setMostrarModalSubida] = useState(false)
+  const [mostrarModalNuevaCarpeta, setMostrarModalNuevaCarpeta] = useState(false)
   const [cargas] = useState(CARGAS_EJEMPLO)
 
-  const navegar = useNavigate()
   const usuario = obtenerSesion()?.usuario
 
-  function manejarSalida() {
-    cerrarSesion()
-    navegar('/login', { replace: true })
+  function contarArchivosDeCarpeta(carpetaId: string) {
+    return archivos.filter((archivo) => archivo.carpetaId === carpetaId && !archivo.enPapelera).length
   }
 
-  // TODO: reemplazar por datos reales del plan del usuario cuando exista la API
-  const almacenamientoUsadoGb = 45
-  const almacenamientoTotalGb = 100
-  const porcentajeUsado = (almacenamientoUsadoGb / almacenamientoTotalGb) * 100
+  const carpetaActiva = carpetas.find((carpeta) => carpeta.id === carpetaActivaId) ?? null
 
   const archivosFiltrados = archivos
     .filter((archivo) => !archivo.enPapelera)
+    .filter((archivo) => carpetaActivaId === null || archivo.carpetaId === carpetaActivaId)
     .filter((archivo) => archivo.nombre.toLowerCase().includes(busqueda.toLowerCase()))
     .filter((archivo) => filtroTipo === 'todos' || archivo.tipo === filtroTipo)
     .filter((archivo) => cumpleRangoFecha(archivo.fechaModificacion, filtroFecha))
@@ -82,135 +70,130 @@ function DashboardPage() {
   }
 
   function manejarEliminar(archivo: Archivo) {
-    setArchivos((anteriores) =>
-      anteriores.map((a) => (a.id === archivo.id ? { ...a, enPapelera: true } : a))
-    )
+    setArchivos((anteriores) => anteriores.map((a) => (a.id === archivo.id ? { ...a, enPapelera: true } : a)))
     if (archivoSeleccionado?.id === archivo.id) {
       setArchivoSeleccionado(null)
     }
   }
 
-  function renderizarBotonMenu(elemento: ElementoMenu) {
-    const estaActivo = seccionActiva === elemento.id
-    return (
-      <button
-        key={elemento.id}
-        type="button"
-        className="btn d-flex align-items-center gap-2 w-100 text-start mb-1"
-        style={{
-          backgroundColor: estaActivo ? 'rgba(37,99,235,0.18)' : 'transparent',
-          color: estaActivo ? '#FFFFFF' : 'rgba(255,255,255,0.7)',
-          border: 'none',
-          borderLeft: estaActivo ? `3px solid ${COLOR_MARCA}` : '3px solid transparent',
-          borderRadius: '0 10px 10px 0',
-          padding: '10px 11px',
-        }}
-        onClick={() => setSeccionActiva(elemento.id)}
-      >
-        {elemento.icono}
-        <span className="small fw-medium">{elemento.etiqueta}</span>
-      </button>
+  function manejarMover(archivo: Archivo, nuevaCarpetaId: string | null) {
+    setArchivos((anteriores) =>
+      anteriores.map((a) => (a.id === archivo.id ? { ...a, carpetaId: nuevaCarpetaId } : a))
     )
+    setArchivoParaMover(null)
+  }
+
+  function manejarCrearCarpeta(nombre: string) {
+    const paleta = COLORES_CARPETA_NUEVA[carpetas.length % COLORES_CARPETA_NUEVA.length]
+    const nuevaCarpeta: Carpeta = {
+      id: `carpeta-${Date.now()}`,
+      nombre,
+      color: paleta.color,
+      colorFondo: paleta.colorFondo,
+    }
+    // TODO(backend): reemplazar por POST /api/carpetas/
+    setCarpetas((anteriores) => [...anteriores, nuevaCarpeta])
+    setMostrarModalNuevaCarpeta(false)
+  }
+
+  function manejarConfirmarSubida(archivosSubidos: File[]) {
+    // TODO(backend): reemplazar por la subida real a la API (POST /api/archivos/ con URL prefirmada de S3/MinIO)
+    const nuevosArchivos: Archivo[] = archivosSubidos.map((archivo, indice) => ({
+      id: `subido-${Date.now()}-${indice}`,
+      nombre: archivo.name,
+      tipo: obtenerTipoArchivoPorNombre(archivo.name),
+      fechaModificacion: 'Justo ahora',
+      tamano: formatearTamanoBytes(archivo.size),
+      propietario: usuario?.nombreCompleto ?? 'Usuario',
+      cifrado: false,
+      esNuevo: true,
+      carpetaId: carpetaActivaId,
+      enPapelera: false,
+    }))
+
+    setArchivos((anteriores) => [...nuevosArchivos, ...anteriores])
+    setMostrarModalSubida(false)
   }
 
   return (
-    <div className="d-flex" style={{ height: '100vh', overflow: 'hidden' }}>
-      <aside
-        className="d-none d-lg-flex flex-column p-3 text-white flex-shrink-0"
-        style={{ width: '260px', height: '100vh', backgroundColor: COLOR_NAVY, overflowY: 'auto' }}
-      >
-        <div className="d-flex align-items-center gap-2 mb-4 px-2">
-          <Cloud size={26} color={COLOR_MARCA} />
-          <span className="fw-bold fs-5">CloudVault PaaS</span>
-        </div>
+    <DashboardLayout seccionActiva="mi-unidad" onClickSubirArchivo={() => setMostrarModalSubida(true)}>
+      <div style={{ flex: 1, padding: 28, display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
+        <BuscadorArchivos
+          valorBusqueda={busqueda}
+          onCambiarBusqueda={setBusqueda}
+          filtroTipo={filtroTipo}
+          onCambiarFiltroTipo={setFiltroTipo}
+          filtroFecha={filtroFecha}
+          onCambiarFiltroFecha={setFiltroFecha}
+          filtroTamano={filtroTamano}
+          onCambiarFiltroTamano={setFiltroTamano}
+        />
 
-        <button
-          type="button"
-          className="btn w-100 d-flex justify-content-center align-items-center gap-2 text-white fw-semibold mb-4"
-          style={{ backgroundColor: COLOR_MARCA, borderRadius: '10px', padding: '10px' }}
-          onClick={() => setMostrarModalSubida(true)}
-        >
-          <Upload size={18} />
-          Subir Archivo
-        </button>
-
-        <div className="text-uppercase small fw-semibold px-2 mb-2" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}>
-          Explorador
-        </div>
-        {ELEMENTOS_EXPLORADOR.map(renderizarBotonMenu)}
-
-        <div className="text-uppercase small fw-semibold px-2 mb-2 mt-4" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}>
-          Gestión
-        </div>
-        {ELEMENTOS_GESTION.map(renderizarBotonMenu)}
-
-        <div className="mt-auto pt-4">
-          <div className="p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
-            <div className="d-flex justify-content-between small mb-2">
-              <span className="fw-semibold">Almacenamiento</span>
-              <span style={{ color: 'rgba(255,255,255,0.6)' }}>
-                {almacenamientoUsadoGb}/{almacenamientoTotalGb} GB
-              </span>
-            </div>
-            <div className="mb-2" style={{ height: '6px', borderRadius: '3px', backgroundColor: 'rgba(255,255,255,0.15)' }}>
-              <div style={{ height: '100%', width: `${porcentajeUsado}%`, borderRadius: '3px', backgroundColor: COLOR_MARCA }} />
-            </div>
-            <p className="small mb-3" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              {almacenamientoTotalGb - almacenamientoUsadoGb} GB disponibles
-            </p>
-            <button type="button" className="btn btn-outline-light w-100 btn-sm fw-semibold" style={{ borderRadius: '8px' }}>
-              Ampliar Plan
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      <div className="d-flex flex-column flex-grow-1" style={{ height: '100vh', overflow: 'hidden', minWidth: 0 }}>
-        <BarraSuperior nombreUsuario={usuario?.nombreCompleto ?? 'Usuario'} onCerrarSesion={manejarSalida} />
-
-        <main style={{ flex: 1, padding: 28, display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0, overflowY: 'auto', backgroundColor: COLOR_FONDO_PAGINA }}>
-          <BuscadorArchivos
-            valorBusqueda={busqueda}
-            onCambiarBusqueda={setBusqueda}
-            filtroTipo={filtroTipo}
-            onCambiarFiltroTipo={setFiltroTipo}
-            filtroFecha={filtroFecha}
-            onCambiarFiltroFecha={setFiltroFecha}
-            filtroTamano={filtroTamano}
-            onCambiarFiltroTamano={setFiltroTamano}
-          />
-
-          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {carpetaActiva ? (
+              <button
+                type="button"
+                onClick={() => setCarpetaActivaId(null)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: '#2563EB',
+                }}
+              >
+                <ChevronLeft size={16} />
+                Mi Unidad
+                <span style={{ color: '#CBD5E1' }}>/</span>
+                <FolderIcon size={14} color={carpetaActiva.color} />
+                {carpetaActiva.nombre}
+              </button>
+            ) : (
               <div>
                 <p style={{ fontSize: 11, fontWeight: 700, color: '#64748B', letterSpacing: '0.07em', marginBottom: 12 }}>
                   CARPETAS PRINCIPALES
                 </p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                  {CARPETAS_EJEMPLO.map((carpeta) => (
-                    <TarjetaCarpeta key={carpeta.id} carpeta={carpeta} />
+                  {carpetas.map((carpeta) => (
+                    <TarjetaCarpeta
+                      key={carpeta.id}
+                      carpeta={carpeta}
+                      cantidadArchivos={contarArchivosDeCarpeta(carpeta.id)}
+                      estaActiva={carpeta.id === carpetaActivaId}
+                      onClick={() => setCarpetaActivaId(carpeta.id)}
+                    />
                   ))}
+                  <TarjetaNuevaCarpeta onClick={() => setMostrarModalNuevaCarpeta(true)} />
                 </div>
               </div>
+            )}
 
-              <TablaArchivos
-                archivos={archivosFiltrados}
-                archivoSeleccionadoId={archivoSeleccionado?.id ?? null}
-                onSeleccionarArchivo={setArchivoSeleccionado}
-                onDescargar={manejarDescargar}
-                onCompartir={setArchivoParaCompartir}
-                onEliminar={manejarEliminar}
-              />
-            </div>
-
-            <PanelDetalleArchivo
-              archivo={archivoSeleccionado}
+            <TablaArchivos
+              archivos={archivosFiltrados}
+              archivoSeleccionadoId={archivoSeleccionado?.id ?? null}
+              onSeleccionarArchivo={setArchivoSeleccionado}
               onDescargar={manejarDescargar}
               onCompartir={setArchivoParaCompartir}
               onEliminar={manejarEliminar}
+              onMover={setArchivoParaMover}
+              titulo={carpetaActiva ? carpetaActiva.nombre.toUpperCase() : 'TODOS LOS ARCHIVOS'}
             />
           </div>
-        </main>
+
+          <PanelDetalleArchivo
+            archivo={archivoSeleccionado}
+            onDescargar={manejarDescargar}
+            onCompartir={setArchivoParaCompartir}
+            onEliminar={manejarEliminar}
+            onMover={setArchivoParaMover}
+          />
+        </div>
       </div>
 
       <NotificacionCargas cargas={cargas} />
@@ -218,15 +201,24 @@ function DashboardPage() {
       <ModalSubirArchivo
         visible={mostrarModalSubida}
         onCerrar={() => setMostrarModalSubida(false)}
-        onConfirmarSubida={(archivos) => {
-          console.log('Archivos a subir:', archivos)
-          // TODO(backend): reemplazar por la llamada real de subida a la API
-          setMostrarModalSubida(false)
-        }}
+        onConfirmarSubida={manejarConfirmarSubida}
       />
 
       <ModalCompartir archivo={archivoParaCompartir} onCerrar={() => setArchivoParaCompartir(null)} />
-    </div>
+
+      <ModalMoverArchivo
+        archivo={archivoParaMover}
+        carpetas={carpetas}
+        onCerrar={() => setArchivoParaMover(null)}
+        onMover={manejarMover}
+      />
+
+      <ModalNuevaCarpeta
+        visible={mostrarModalNuevaCarpeta}
+        onCerrar={() => setMostrarModalNuevaCarpeta(false)}
+        onCrear={manejarCrearCarpeta}
+      />
+    </DashboardLayout>
   )
 }
 

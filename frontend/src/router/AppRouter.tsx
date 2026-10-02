@@ -3,11 +3,7 @@ import LoginPage from '../pages/LoginPage'
 import RegisterPage from '../pages/RegisterPage'
 import RecoverPasswordPage from '../pages/RecoverPasswordPage'
 import DashboardPage from '../pages/DashboardPage'
-import { obtenerSesion } from '../services/authService'
-
-function RutaDashboard() {
-  return obtenerSesion() ? <DashboardPage /> : <Navigate to="/login" replace />
-}
+import ProfilePage from '../pages/ProfilePage'
 
 function AppRouter() {
   return (
@@ -16,7 +12,8 @@ function AppRouter() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/registro" element={<RegisterPage />} />
         <Route path="/recuperar" element={<RecoverPasswordPage />} />
-        <Route path="/dashboard" element={<RutaDashboard />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/perfil" element={<ProfilePage />} />
         <Route path="/" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
