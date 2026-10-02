@@ -4,9 +4,12 @@ import type { Archivo } from '../../types/archivo'
 
 interface PanelDetalleArchivoProps {
   archivo: Archivo | null
+  onDescargar: (archivo: Archivo) => void
+  onCompartir: (archivo: Archivo) => void
+  onEliminar: (archivo: Archivo) => void
 }
 
-function PanelDetalleArchivo({ archivo }: PanelDetalleArchivoProps) {
+function PanelDetalleArchivo({ archivo, onDescargar, onCompartir, onEliminar }: PanelDetalleArchivoProps) {
   if (!archivo) return null
 
   const configuracion = obtenerConfiguracionTipoArchivo(archivo.tipo)
@@ -20,15 +23,7 @@ function PanelDetalleArchivo({ archivo }: PanelDetalleArchivoProps) {
   ]
 
   return (
-    <div
-      style={{
-        width: 280,
-        flexShrink: 0,
-        background: '#fff',
-        border: '1px solid #E2E8F0',
-        borderRadius: 12,
-      }}
-    >
+    <div style={{ width: 280, flexShrink: 0, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12 }}>
       <div
         style={{
           background: '#F8FAFC',
@@ -100,6 +95,7 @@ function PanelDetalleArchivo({ archivo }: PanelDetalleArchivoProps) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           <button
             type="button"
+            onClick={() => onDescargar(archivo)}
             style={{
               width: '100%',
               background: '#2563EB',
@@ -121,6 +117,7 @@ function PanelDetalleArchivo({ archivo }: PanelDetalleArchivoProps) {
           </button>
           <button
             type="button"
+            onClick={() => onCompartir(archivo)}
             style={{
               width: '100%',
               background: '#F8FAFC',
@@ -142,6 +139,7 @@ function PanelDetalleArchivo({ archivo }: PanelDetalleArchivoProps) {
           </button>
           <button
             type="button"
+            onClick={() => onEliminar(archivo)}
             style={{
               width: '100%',
               background: '#FEF2F2',

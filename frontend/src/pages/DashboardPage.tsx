@@ -4,7 +4,9 @@ import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, Shield } from 'luc
 import { cerrarSesion, obtenerSesion } from '../services/authService'
 import { COLOR_MARCA, COLOR_NAVY, COLOR_FONDO_PAGINA } from '../theme/colores'
 import { CARPETAS_EJEMPLO, ARCHIVOS_EJEMPLO, CARGAS_EJEMPLO } from '../data/datosEjemplo'
-import type { Archivo } from '../types/archivo'
+import { cumpleRangoFecha, cumpleRangoTamano } from '../utils/filtrosArchivos'
+import type { RangoFecha, RangoTamano } from '../utils/filtrosArchivos'
+import type { Archivo, TipoArchivo } from '../types/archivo'
 import BarraSuperior from '../components/dashboard/BarraSuperior'
 import BuscadorArchivos from '../components/dashboard/BuscadorArchivos'
 import TarjetaCarpeta from '../components/dashboard/TarjetaCarpeta'
@@ -12,8 +14,10 @@ import TablaArchivos from '../components/dashboard/TablaArchivos'
 import PanelDetalleArchivo from '../components/dashboard/PanelDetalleArchivo'
 import NotificacionCargas from '../components/dashboard/NotificacionCargas'
 import ModalSubirArchivo from '../components/dashboard/ModalSubirArchivo'
+import ModalCompartir from '../components/dashboard/ModalCompartir'
 
 type SeccionExplorador = 'mi-unidad' | 'compartidos' | 'recientes' | 'papelera' | 'planes' | 'administracion'
+type FiltroTipo = TipoArchivo | 'todos'
 
 interface ElementoMenu {
   id: SeccionExplorador
@@ -35,8 +39,13 @@ const ELEMENTOS_GESTION: ElementoMenu[] = [
 
 function DashboardPage() {
   const [seccionActiva, setSeccionActiva] = useState<SeccionExplorador>('mi-unidad')
+  const [archivos, setArchivos] = useState<Archivo[]>(ARCHIVOS_EJEMPLO)
   const [busqueda, setBusqueda] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
+  const [filtroFecha, setFiltroFecha] = useState<RangoFecha>('cualquiera')
+  const [filtroTamano, setFiltroTamano] = useState<RangoTamano>('cualquiera')
   const [archivoSeleccionado, setArchivoSeleccionado] = useState<Archivo | null>(null)
+  const [archivoParaCompartir, setArchivoParaCompartir] = useState<Archivo | null>(null)
   const [mostrarModalSubida, setMostrarModalSubida] = useState(false)
   const [cargas] = useState(CARGAS_EJEMPLO)
 
@@ -53,9 +62,33 @@ function DashboardPage() {
   const almacenamientoTotalGb = 100
   const porcentajeUsado = (almacenamientoUsadoGb / almacenamientoTotalGb) * 100
 
-  const archivosFiltrados = ARCHIVOS_EJEMPLO.filter((archivo) =>
-    archivo.nombre.toLowerCase().includes(busqueda.toLowerCase())
-  )
+  const archivosFiltrados = archivos
+    .filter((archivo) => !archivo.enPapelera)
+    .filter((archivo) => archivo.nombre.toLowerCase().includes(busqueda.toLowerCase()))
+    .filter((archivo) => filtroTipo === 'todos' || archivo.tipo === filtroTipo)
+    .filter((archivo) => cumpleRangoFecha(archivo.fechaModificacion, filtroFecha))
+    .filter((archivo) => cumpleRangoTamano(archivo.tamano, filtroTamano))
+
+  function manejarDescargar(archivo: Archivo) {
+    // TODO(backend): reemplazar por la descarga real desde la URL prefirmada de S3/MinIO
+    const contenido = `Archivo de ejemplo generado por CloudVault.\n\nNombre: ${archivo.nombre}\nTamaño reportado: ${archivo.tamano}`
+    const blob = new Blob([contenido], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const enlace = document.createElement('a')
+    enlace.href = url
+    enlace.download = archivo.nombre
+    enlace.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function manejarEliminar(archivo: Archivo) {
+    setArchivos((anteriores) =>
+      anteriores.map((a) => (a.id === archivo.id ? { ...a, enPapelera: true } : a))
+    )
+    if (archivoSeleccionado?.id === archivo.id) {
+      setArchivoSeleccionado(null)
+    }
+  }
 
   function renderizarBotonMenu(elemento: ElementoMenu) {
     const estaActivo = seccionActiva === elemento.id
@@ -82,7 +115,6 @@ function DashboardPage() {
 
   return (
     <div className="d-flex" style={{ height: '100vh', overflow: 'hidden' }}>
-      {/* Sidebar: altura fija, no se mueve */}
       <aside
         className="d-none d-lg-flex flex-column p-3 text-white flex-shrink-0"
         style={{ width: '260px', height: '100vh', backgroundColor: COLOR_NAVY, overflowY: 'auto' }}
@@ -102,18 +134,12 @@ function DashboardPage() {
           Subir Archivo
         </button>
 
-        <div
-          className="text-uppercase small fw-semibold px-2 mb-2"
-          style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}
-        >
+        <div className="text-uppercase small fw-semibold px-2 mb-2" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}>
           Explorador
         </div>
         {ELEMENTOS_EXPLORADOR.map(renderizarBotonMenu)}
 
-        <div
-          className="text-uppercase small fw-semibold px-2 mb-2 mt-4"
-          style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}
-        >
+        <div className="text-uppercase small fw-semibold px-2 mb-2 mt-4" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}>
           Gestión
         </div>
         {ELEMENTOS_GESTION.map(renderizarBotonMenu)}
@@ -127,9 +153,7 @@ function DashboardPage() {
               </span>
             </div>
             <div className="mb-2" style={{ height: '6px', borderRadius: '3px', backgroundColor: 'rgba(255,255,255,0.15)' }}>
-              <div
-                style={{ height: '100%', width: `${porcentajeUsado}%`, borderRadius: '3px', backgroundColor: COLOR_MARCA }}
-              />
+              <div style={{ height: '100%', width: `${porcentajeUsado}%`, borderRadius: '3px', backgroundColor: COLOR_MARCA }} />
             </div>
             <p className="small mb-3" style={{ color: 'rgba(255,255,255,0.5)' }}>
               {almacenamientoTotalGb - almacenamientoUsadoGb} GB disponibles
@@ -141,12 +165,20 @@ function DashboardPage() {
         </div>
       </aside>
 
-      {/* Columna derecha: barra superior fija + contenido con scroll único */}
       <div className="d-flex flex-column flex-grow-1" style={{ height: '100vh', overflow: 'hidden', minWidth: 0 }}>
         <BarraSuperior nombreUsuario={usuario?.nombreCompleto ?? 'Usuario'} onCerrarSesion={manejarSalida} />
 
-               <main style={{ flex: 1, padding: 28, display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0, overflowY: 'auto' }}>
-          <BuscadorArchivos valorBusqueda={busqueda} onCambiarBusqueda={setBusqueda} />
+        <main style={{ flex: 1, padding: 28, display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0, overflowY: 'auto', backgroundColor: COLOR_FONDO_PAGINA }}>
+          <BuscadorArchivos
+            valorBusqueda={busqueda}
+            onCambiarBusqueda={setBusqueda}
+            filtroTipo={filtroTipo}
+            onCambiarFiltroTipo={setFiltroTipo}
+            filtroFecha={filtroFecha}
+            onCambiarFiltroFecha={setFiltroFecha}
+            filtroTamano={filtroTamano}
+            onCambiarFiltroTamano={setFiltroTamano}
+          />
 
           <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
             <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -165,10 +197,18 @@ function DashboardPage() {
                 archivos={archivosFiltrados}
                 archivoSeleccionadoId={archivoSeleccionado?.id ?? null}
                 onSeleccionarArchivo={setArchivoSeleccionado}
+                onDescargar={manejarDescargar}
+                onCompartir={setArchivoParaCompartir}
+                onEliminar={manejarEliminar}
               />
             </div>
 
-            <PanelDetalleArchivo archivo={archivoSeleccionado} />
+            <PanelDetalleArchivo
+              archivo={archivoSeleccionado}
+              onDescargar={manejarDescargar}
+              onCompartir={setArchivoParaCompartir}
+              onEliminar={manejarEliminar}
+            />
           </div>
         </main>
       </div>
@@ -184,6 +224,8 @@ function DashboardPage() {
           setMostrarModalSubida(false)
         }}
       />
+
+      <ModalCompartir archivo={archivoParaCompartir} onCerrar={() => setArchivoParaCompartir(null)} />
     </div>
   )
 }
