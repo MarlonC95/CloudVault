@@ -36,8 +36,12 @@ Thumbs.db
 minio_data/
 postgres_data/
 
+#Docker files
+/backend/.env.docker
+
 # Coverage & Test reports
 htmlcov/
 .coverage
 .pytest_cache/
 coverage/
+
