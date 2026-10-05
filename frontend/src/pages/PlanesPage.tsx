@@ -5,56 +5,54 @@ import DashboardLayout from '../components/layout/DashboardLayout'
 type NivelPlan = 'gratuito' | 'pro' | 'empresarial'
 type TipoFacturacion = 'mensual' | 'anual'
 
-interface Plan {
+interface PlanCatalogo {
   id: NivelPlan
   nombre: string
-  precioBase: number
+  precioMensual: number
+  precioAnual: number
+  almacenamientoLegible: string
   esPopular: boolean
   caracteristicas: string[]
   accion: { etiqueta: string; estilo: 'deshabilitado' | 'solido' | 'contorno' }
 }
 
-const PLANES: Plan[] = [
+// TODO(backend): reemplazar por GET /api/v1/planes/ (contrato sección 10.1).
+// Fuente de verdad del almacenamiento y precio: tabla "planes" de la base de datos.
+const PLANES: PlanCatalogo[] = [
   {
     id: 'gratuito',
     nombre: 'Gratuito',
-    precioBase: 0,
+    precioMensual: 0,
+    precioAnual: 0,
+    almacenamientoLegible: '15 GB',
     esPopular: false,
-    caracteristicas: ['15 GB almacenamiento', '1 Usuario', 'Cifrado estándar', 'Soporte por comunidad'],
+    caracteristicas: ['1 Usuario', 'Cifrado estándar', 'Soporte por comunidad'],
     accion: { etiqueta: 'Plan Actual', estilo: 'deshabilitado' },
   },
   {
     id: 'pro',
     nombre: 'Pro PaaS',
-    precioBase: 29,
+    precioMensual: 29,
+    precioAnual: 278,
+    almacenamientoLegible: '100 GB',
     esPopular: true,
-    caracteristicas: [
-      '100 GB almacenamiento',
-      'Hasta 5 Usuarios',
-      'Cifrado de extremo a extremo',
-      'Versionado de archivos',
-      'Soporte 24/7',
-    ],
+    caracteristicas: ['Hasta 5 Usuarios', 'Cifrado de extremo a extremo', 'Versionado de archivos', 'Soporte 24/7'],
     accion: { etiqueta: 'Suscrito', estilo: 'solido' },
   },
   {
     id: 'empresarial',
     nombre: 'Empresarial',
-    precioBase: 99,
+    precioMensual: 99,
+    precioAnual: 950,
+    almacenamientoLegible: '1 TB',
     esPopular: false,
-    caracteristicas: [
-      'Almacenamiento ilimitado',
-      'Usuarios ilimitados',
-      'Logs de auditoría avanzada',
-      'API dedicada',
-      'SLA del 99.9%',
-    ],
+    caracteristicas: ['Usuarios ilimitados', 'Logs de auditoría avanzada', 'API dedicada', 'SLA del 99.9%'],
     accion: { etiqueta: 'Actualizar Plan', estilo: 'contorno' },
   },
 ]
 
 const FILAS_COMPARATIVA: { etiqueta: string; valores: (string | boolean)[] }[] = [
-  { etiqueta: 'Almacenamiento', valores: ['15 GB', '100 GB', 'Ilimitado'] },
+  { etiqueta: 'Almacenamiento', valores: PLANES.map((plan) => plan.almacenamientoLegible) },
   { etiqueta: 'Usuarios', valores: ['1', '5', 'Ilimitados'] },
   { etiqueta: 'Cifrado', valores: ['Estándar', 'E2E', 'E2E'] },
   { etiqueta: 'Versionado', valores: [false, true, true] },
@@ -74,15 +72,20 @@ const PREGUNTAS_FRECUENTES = [
 function PlanesPage() {
   const [facturacion, setFacturacion] = useState<TipoFacturacion>('mensual')
 
-  // TODO: reemplazar por datos reales del plan del usuario cuando exista la API
+  // TODO(backend): reemplazar por GET /api/v1/unidad/resumen/ (contrato sección 3.11)
   const almacenamientoUsado = 45
   const almacenamientoTotal = 100
   const porcentajeUsado = (almacenamientoUsado / almacenamientoTotal) * 100
 
-  function calcularPrecio(plan: Plan): string {
-    if (plan.precioBase === 0) return '$0'
-    if (facturacion === 'anual') return `$${Math.round(plan.precioBase * 0.8)}`
-    return `$${plan.precioBase}`
+  function obtenerPrecio(plan: PlanCatalogo): string {
+    const monto = facturacion === 'anual' ? plan.precioAnual : plan.precioMensual
+    return `$${monto}`
+  }
+
+  function manejarActualizarPlan(plan: PlanCatalogo) {
+    // TODO(backend): POST /api/v1/mi-plan/suscribir/ con { plan_id: plan.id, tipo_facturacion: facturacion }
+    // Si responde 409 CUOTA_EXCEDIDA (downgrade con más uso que el nuevo límite), mostrar el error al usuario.
+    alert(`Pendiente de conectar: suscribirse a ${plan.nombre} (${facturacion})`)
   }
 
   return (
@@ -205,13 +208,10 @@ function PlanesPage() {
 
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 20 }}>
                 <span style={{ fontSize: 32, fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: 1 }}>
-                  {calcularPrecio(plan)}
+                  {obtenerPrecio(plan)}
                 </span>
                 <span style={{ fontSize: 13, color: '#94A3B8', fontWeight: 400 }}>
-                  / mes
-                  {facturacion === 'anual' && plan.precioBase > 0 && (
-                    <span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600, marginLeft: 4 }}>×12</span>
-                  )}
+                  {facturacion === 'anual' ? '/ año' : '/ mes'}
                 </span>
               </div>
 
@@ -262,7 +262,7 @@ function PlanesPage() {
               {plan.accion.estilo === 'contorno' && (
                 <button
                   type="button"
-                  onClick={() => alert('TODO(backend): iniciar el flujo de actualización de plan (pago simulado por ahora)')}
+                  onClick={() => manejarActualizarPlan(plan)}
                   style={{
                     width: '100%',
                     height: 44,
@@ -288,7 +288,7 @@ function PlanesPage() {
               <div style={{ height: 1, background: '#F1F5F9', marginBottom: 18 }} />
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {plan.caracteristicas.map((caracteristica) => (
+                {[`${plan.almacenamientoLegible} almacenamiento`, ...plan.caracteristicas].map((caracteristica) => (
                   <div key={caracteristica} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div
                       style={{
