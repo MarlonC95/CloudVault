@@ -27,6 +27,7 @@ build/
 # IDEs & System
 .idea/
 .vscode/
+.obsidian/
 *.swp
 *.swo
 .DS_Store

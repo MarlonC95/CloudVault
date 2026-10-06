@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "auth_workspaces",
+    "almacenamiento",
 ]
 
 MIDDLEWARE = [
