@@ -2,6 +2,7 @@
 .env
 .env.local
 *.env
+backend/.env.docker
 
 # Python & Django
 __pycache__/
