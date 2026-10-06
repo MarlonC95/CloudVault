@@ -494,7 +494,7 @@ Preferencias del usuario (por ahora, 2FA). Respalda el toggle de 2FA.
 Respalda `frontend/src/pages/DashboardPage.tsx` y los componentes
 `TarjetaCarpeta`, `ModalNuevaCarpeta`, `TablaArchivos`.
 
-### 3.1 `GET /api/v1/carpetas/` — 🆕 Pendiente
+### 3.1 `GET /api/v1/carpetas/` — ✅ Implementado
 
 **Headers:** `Authorization: Bearer <access>`
 
@@ -503,6 +503,7 @@ Respalda `frontend/src/pages/DashboardPage.tsx` y los componentes
 | Param | Tipo | Descripción |
 | --- | --- | --- |
 | `page` | int | Número de página (paginación) |
+| `padre` | uuid o `null` | Filtra por carpeta padre; `null` devuelve solo las carpetas raíz. Ausente = todas. |
 
 **200 OK**
 
@@ -518,6 +519,8 @@ Respalda `frontend/src/pages/DashboardPage.tsx` y los componentes
         "nombre": "Documentos",
         "color": "#2563EB",
         "color_fondo": "#EFF6FF",
+        "padre_id": null,
+        "ruta_completa": "/Documentos",
         "cantidad_archivos": 2,
         "creado_en": "2026-08-01T10:00:00Z"
       },
@@ -526,6 +529,8 @@ Respalda `frontend/src/pages/DashboardPage.tsx` y los componentes
         "nombre": "Proyectos",
         "color": "#7C3AED",
         "color_fondo": "#F5F3FF",
+        "padre_id": null,
+        "ruta_completa": "/Proyectos",
         "cantidad_archivos": 2,
         "creado_en": "2026-08-02T10:00:00Z"
       }
@@ -534,13 +539,16 @@ Respalda `frontend/src/pages/DashboardPage.tsx` y los componentes
 }
 ```
 
+> Cada carpeta expone `padre_id` (uuid del padre, `null` en la raíz) y
+> `ruta_completa` (ruta absoluta calculada, p. ej. `/Documentos/Contratos 2026`).
+
 **401** `NO_AUTENTICADO`
 
 ```json
 { "error": { "code": "NO_AUTENTICADO" } }
 ```
 
-### 3.2 `POST /api/v1/carpetas/` — 🆕 Pendiente
+### 3.2 `POST /api/v1/carpetas/` — ✅ Implementado
 
 Resuelve el `TODO(backend)` de `DashboardPage.tsx:94`.
 
@@ -552,12 +560,14 @@ Resuelve el `TODO(backend)` de `DashboardPage.tsx:94`.
 {
   "nombre": "Contratos 2026",
   "color": "#2563EB",
-  "color_fondo": "#EFF6FF"
+  "color_fondo": "#EFF6FF",
+  "padre_id": "documentos"
 }
 ```
 
 `color` y `color_fondo` son opcionales; si no se envían, el backend asigna una
 paleta por defecto (equivalent al arreglo `COLORES_CARPETA_NUEVA` del Frontend).
+`padre_id` es opcional (`null` o ausente crea la carpeta en la raíz).
 
 **201 Created**
 
@@ -568,6 +578,8 @@ paleta por defecto (equivalent al arreglo `COLORES_CARPETA_NUEVA` del Frontend).
     "nombre": "Contratos 2026",
     "color": "#2563EB",
     "color_fondo": "#EFF6FF",
+    "padre_id": "documentos",
+    "ruta_completa": "/Documentos/Contratos 2026",
     "cantidad_archivos": 0,
     "creado_en": "2026-10-04T18:30:00Z"
   }
@@ -600,7 +612,7 @@ paleta por defecto (equivalent al arreglo `COLORES_CARPETA_NUEVA` del Frontend).
 }
 ```
 
-### 3.3 `GET /api/v1/carpetas/{id}/` — 🆕 Pendiente
+### 3.3 `GET /api/v1/carpetas/{id}/` — ✅ Implementado
 
 **Headers:** `Authorization: Bearer <access>`
 
@@ -612,7 +624,7 @@ paleta por defecto (equivalent al arreglo `COLORES_CARPETA_NUEVA` del Frontend).
 { "error": { "code": "NO_ENCONTRADO" } }
 ```
 
-### 3.4 `PATCH /api/v1/carpetas/{id}/` — 🆕 Pendiente
+### 3.4 `PATCH /api/v1/carpetas/{id}/` — ✅ Implementado
 
 Renombrar / recolorear.
 
@@ -633,6 +645,8 @@ Renombrar / recolorear.
     "nombre": "Contratos 2026 (cerrados)",
     "color": "#2563EB",
     "color_fondo": "#EFF6FF",
+    "padre_id": "documentos",
+    "ruta_completa": "/Documentos/Contratos 2026 (cerrados)",
     "cantidad_archivos": 0,
     "creado_en": "2026-10-04T18:30:00Z"
   }
@@ -645,7 +659,7 @@ Renombrar / recolorear.
 { "error": { "code": "SIN_PERMISO" } }
 ```
 
-### 3.5 `DELETE /api/v1/carpetas/{id}/` — 🆕 Pendiente
+### 3.5 `DELETE /api/v1/carpetas/{id}/` — ✅ Implementado
 
 Elimina la carpeta. Los archivos dentro se mueven a "Sin carpeta" (o a la
 papelera, según se defina con el equipo).
@@ -660,7 +674,94 @@ papelera, según se defina con el equipo).
 { "error": { "code": "NO_ENCONTRADO" } }
 ```
 
-### 3.6 `GET /api/v1/archivos/` — 🆕 Pendiente
+### 3.5.1 `GET /api/v1/carpetas/{id}/contenido/` — ✅ Implementado
+
+Devuelve el contenido directo de una carpeta: sus subcarpetas y sus archivos.
+
+**Headers:** `Authorization: Bearer <access>`
+
+**200 OK**
+
+```json
+{
+  "data": {
+    "subcarpetas": [
+      {
+        "id": "contratos",
+        "nombre": "Contratos 2026",
+        "color": "#2563EB",
+        "color_fondo": "#EFF6FF",
+        "padre_id": "documentos",
+        "ruta_completa": "/Documentos/Contratos 2026",
+        "cantidad_archivos": 0,
+        "creado_en": "2026-10-04T18:30:00Z"
+      }
+    ],
+    "archivos": [
+      {
+        "id": "1",
+        "nombre_original": "Arquitectura_PaaS_v1.pdf",
+        "tamano_bytes": 4404019,
+        "tipo_mime": "application/pdf",
+        "carpeta_id": "documentos",
+        "creado_en": "2026-10-04T16:30:00Z"
+      }
+    ]
+  }
+}
+```
+
+**404** `NO_ENCONTRADO`
+
+```json
+{ "error": { "code": "NO_ENCONTRADO" } }
+```
+
+### 3.5.2 `POST /api/v1/carpetas/{id}/mover/` — ✅ Implementado
+
+Mueve una carpeta (y a todo su subárbol) a otra carpeta o a la raíz. Actualiza
+`ruta_completa` en los descendientes y rechaza mover una carpeta dentro de sí
+misma o de una de sus subcarpetas.
+
+**Headers:** `Authorization: Bearer <access>`
+
+**Body** (`padre_id: null` = raíz)
+
+```json
+{ "padre_id": "documentos" }
+```
+
+**200 OK**
+
+```json
+{
+  "data": {
+    "id": "carpeta-1700000000000",
+    "nombre": "Contratos 2026",
+    "color": "#2563EB",
+    "color_fondo": "#EFF6FF",
+    "padre_id": "documentos",
+    "ruta_completa": "/Documentos/Contratos 2026",
+    "cantidad_archivos": 0,
+    "creado_en": "2026-10-04T18:30:00Z"
+  }
+}
+```
+
+**400** `VALIDATION_ERROR` (destino inexistente, ciclo o nombre duplicado)
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "fields": {
+      "padre_id": ["La carpeta indicada no existe."]
+    }
+  }
+}
+```
+
+### 3.6 `GET /api/v1/archivos/` — ✅ Implementado
 
 Listado con filtros que respaldan `BuscadorArchivos.tsx`.
 
@@ -710,7 +811,7 @@ Listado con filtros que respaldan `BuscadorArchivos.tsx`.
 { "error": { "code": "NO_AUTENTICADO" } }
 ```
 
-### 3.7 `GET /api/v1/archivos/{id}/` — 🆕 Pendiente
+### 3.7 `GET /api/v1/archivos/{id}/` — ✅ Implementado
 
 **Headers:** `Authorization: Bearer <access>`
 
@@ -722,7 +823,7 @@ Listado con filtros que respaldan `BuscadorArchivos.tsx`.
 { "error": { "code": "NO_ENCONTRADO" } }
 ```
 
-### 3.8 `PATCH /api/v1/archivos/{id}/` — 🆕 Pendiente
+### 3.8 `PATCH /api/v1/archivos/{id}/` — ✅ Implementado
 
 Renombrar.
 
@@ -778,7 +879,7 @@ Envío a la papelera lógica (retención 30 días). No borra el objeto del stora
 { "error": { "code": "NO_ENCONTRADO" } }
 ```
 
-### 3.10 `POST /api/v1/archivos/{id}/mover/` — 🆕 Pendiente
+### 3.10 `POST /api/v1/archivos/{id}/mover/` — ✅ Implementado
 
 Respalda `ModalMoverArchivo.tsx`.
 
@@ -1367,7 +1468,7 @@ Módulo "Compartidos conmigo" del menú (`DashboardLayout.tsx`).
 
 Respalda `frontend/src/pages/PlanesPage.tsx`.
 
-### 10.1 `GET /api/v1/planes/` — 🆕 Pendiente
+### 10.1 `GET /api/v1/planes/` — ✅ Implementado
 
 Catálogo de planes. Puede ser público o requerir auth; se recomienda requerir
 `Authorization` para poder marcar el plan actual.
@@ -1437,7 +1538,7 @@ Catálogo de planes. Puede ser público o requerir auth; se recomienda requerir
 
 > `precio_anual` refleja el descuento del 20% (`-20%` mostrado en la UI).
 
-### 10.2 `GET /api/v1/mi-plan/` — 🆕 Pendiente
+### 10.2 `GET /api/v1/mi-plan/` — ✅ Implementado
 
 Plan actual del usuario y consumo. Alimenta la barra de `PlanesPage.tsx` y el
 bloque lateral del dashboard.
@@ -1475,7 +1576,7 @@ bloque lateral del dashboard.
 { "error": { "code": "NO_AUTENTICADO" } }
 ```
 
-### 10.3 `POST /api/v1/mi-plan/suscribir/` — 🆕 Pendiente
+### 10.3 `POST /api/v1/mi-plan/suscribir/` — ✅ Implementado
 
 Cambia o contrata un plan. Resuelve el `TODO(backend)` del botón
 "Actualizar Plan" de `PlanesPage.tsx` (pago simulado por ahora).
@@ -1582,16 +1683,18 @@ Historial de facturación.
 | 2.4 | `/api/v1/auth/cambiar-palabra-secreta/` | POST | 🆕 Pendiente |
 | 2.5 | `/api/v1/auth/preferencias/` | GET | 🆕 Pendiente |
 | 2.6 | `/api/v1/auth/preferencias/` | PATCH | 🆕 Pendiente |
-| 3.1 | `/api/v1/carpetas/` | GET | 🆕 Pendiente |
-| 3.2 | `/api/v1/carpetas/` | POST | 🆕 Pendiente |
-| 3.3 | `/api/v1/carpetas/{id}/` | GET | 🆕 Pendiente |
-| 3.4 | `/api/v1/carpetas/{id}/` | PATCH | 🆕 Pendiente |
-| 3.5 | `/api/v1/carpetas/{id}/` | DELETE | 🆕 Pendiente |
-| 3.6 | `/api/v1/archivos/` | GET | 🆕 Pendiente |
-| 3.7 | `/api/v1/archivos/{id}/` | GET | 🆕 Pendiente |
-| 3.8 | `/api/v1/archivos/{id}/` | PATCH | 🆕 Pendiente |
+| 3.1 | `/api/v1/carpetas/` | GET | ✅ Implementado |
+| 3.2 | `/api/v1/carpetas/` | POST | ✅ Implementado |
+| 3.3 | `/api/v1/carpetas/{id}/` | GET | ✅ Implementado |
+| 3.4 | `/api/v1/carpetas/{id}/` | PATCH | ✅ Implementado |
+| 3.5 | `/api/v1/carpetas/{id}/` | DELETE | ✅ Implementado |
+| 3.5.1 | `/api/v1/carpetas/{id}/contenido/` | GET | ✅ Implementado |
+| 3.5.2 | `/api/v1/carpetas/{id}/mover/` | POST | ✅ Implementado |
+| 3.6 | `/api/v1/archivos/` | GET | ✅ Implementado |
+| 3.7 | `/api/v1/archivos/{id}/` | GET | ✅ Implementado |
+| 3.8 | `/api/v1/archivos/{id}/` | PATCH | ✅ Implementado |
 | 3.9 | `/api/v1/archivos/{id}/` | DELETE | 🆕 Pendiente |
-| 3.10 | `/api/v1/archivos/{id}/mover/` | POST | 🆕 Pendiente |
+| 3.10 | `/api/v1/archivos/{id}/mover/` | POST | ✅ Implementado |
 | 3.11 | `/api/v1/unidad/resumen/` | GET | 🆕 Pendiente |
 | 4.1 | `/api/v1/archivos/iniciar-carga/` | POST | 🆕 Pendiente |
 | 4.2 | `/api/v1/archivos/{id}/confirmar-carga/` | POST | 🆕 Pendiente |
@@ -1608,9 +1711,9 @@ Historial de facturación.
 | 8.2 | `/api/v1/papelera/{id}/restaurar/` | POST | 🆕 Pendiente |
 | 8.3 | `/api/v1/papelera/{id}/` | DELETE | 🆕 Pendiente |
 | 9.1 | `/api/v1/compartidos-conmigo/` | GET | 🆕 Pendiente |
-| 10.1 | `/api/v1/planes/` | GET | 🆕 Pendiente |
-| 10.2 | `/api/v1/mi-plan/` | GET | 🆕 Pendiente |
-| 10.3 | `/api/v1/mi-plan/suscribir/` | POST | 🆕 Pendiente |
+| 10.1 | `/api/v1/planes/` | GET | ✅ Implementado |
+| 10.2 | `/api/v1/mi-plan/` | GET | ✅ Implementado |
+| 10.3 | `/api/v1/mi-plan/suscribir/` | POST | ✅ Implementado |
 | 10.4 | `/api/v1/mi-plan/facturas/` | GET | 🆕 Pendiente |
 
 ## Apéndice B — Notas de integración con el Frontend
