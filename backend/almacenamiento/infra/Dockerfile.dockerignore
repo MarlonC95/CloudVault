@@ -1,0 +1,16 @@
+**
+!backend/
+!backend/requirements.txt
+!backend/almacenamiento/
+!backend/almacenamiento/**
+!backend/auth_workspaces/
+!backend/auth_workspaces/**
+!backend/config/
+!backend/config/**
+!agente/
+!agente/contrato-fase-01.openapi.json
+**/__pycache__/
+**/*.pyc
+**/.env
+**/.env.*
+**/*.env

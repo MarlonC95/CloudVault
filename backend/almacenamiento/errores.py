@@ -16,7 +16,6 @@ from rest_framework.exceptions import (
     ValidationError,
 )
 from rest_framework.response import Response
-from rest_framework.views import set_rollback
 
 from .contrato import CodigoError, ESTADOS_HTTP_ERROR
 
@@ -46,6 +45,9 @@ def error_de_almacenamiento(exc, context=None):
 
     No se instala globalmente ni necesita el contexto para construir el error.
     """
+    # La primitiva S3 también se usa sin iniciar Django (ensayos aislados).
+    from rest_framework.views import set_rollback
+
     fields = {}
     headers = {}
     if isinstance(exc, ErrorCarga):

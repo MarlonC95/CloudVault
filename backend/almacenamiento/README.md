@@ -1,6 +1,6 @@
-# Almacenamiento de Dani — fases 01 y 02
+# Almacenamiento de Dani — fases 01, 02 y cliente de fase 03
 
-Estado: **contrato y persistencia técnica implementados y probados localmente**. Los proveedores reales de negocio/SQL compartido y la subida S3/endpoints siguen pendientes en sus fases correspondientes.
+Estado: **contrato y persistencia técnica implementados y probados localmente**. El cliente S3 de fase 03 está implementado y probado localmente; la validación Railway sigue pendiente porque el acceso con `.env` devolvió `403 InvalidAccessKeyId`. Proveedores reales de negocio/SQL y endpoints siguen pendientes.
 
 ## Componentes disponibles
 
@@ -19,7 +19,7 @@ Estado: **contrato y persistencia técnica implementados y probados localmente**
 | `tests/` | Casos positivos, negativos, límites, OpenAPI y seguridad; configuración sin base de datos |
 | `tests_persistencia/` | PostgreSQL desechable, SQL literal y pruebas de persistencia/concurrencia/rollback/recuperación |
 
-No hay migraciones, cliente S3 ni rutas de archivos ejecutables en estas fases. Las interfaces/adaptadores no implementan modelos, CRUD, planes ni permisos de otros integrantes. La autenticación y su handler global conservan su código. El único cambio compartido es registrar la app propia en `config/settings.py`; no instala SQL al arrancar.
+No hay migraciones ni rutas de archivos ejecutables. El cliente S3 es una primitiva interna: no autoriza ni reserva cuota por sí mismo. Las interfaces/adaptadores no implementan modelos, CRUD, planes ni permisos de otros integrantes. La autenticación y su handler global conservan su código. El único cambio compartido es registrar la app propia en `config/settings.py`; no instala SQL al arrancar.
 
 ## Probar
 
@@ -85,3 +85,9 @@ El adaptador exige UUID de actor/archivo antes de consultar la autorización de 
 El generador OpenAPI admite `crear_openapi(politica=...)` para documentar un perfil operativo distinto. Al cambiar el límite en una futura configuración, exportar el mismo perfil que se utiliza en las vistas y volver a comprobar la correspondencia.
 
 Leer [decisiones de contrato](../../agente/contrato-fase-01.md), [persistencia e integración](../../agente/persistencia-fase-02.md), [evidencia de fase 02](../../agente/evidencia-fase-02.md) e [inventario funcional](../../agente/funcionalidades-fases-01-y-02.md). La documentación de [DRF](https://www.django-rest-framework.org/api-guide/serializers/) y [drf-spectacular](https://drf-spectacular.readthedocs.io/en/stable/readme.html) explica las herramientas reutilizadas.
+
+## Cliente S3 — fase 03
+
+`configuracion_s3.py` selecciona perfiles independientes; `s3.py` firma PUT/GET, consulta, verifica hash real por bloques, copia condicionalmente y borra claves técnicas propias. `probar_s3.py` hace un ensayo opt-in con objetos nuevos y limpieza; `ensayo_s3.html` prueba CORS desde un navegador sin modificar React. `infra/` contiene el contenedor de pruebas propio, con contexto limitado mediante `Dockerfile.dockerignore`.
+
+Ver [configuración y reproducción](../../agente/cliente-s3-fase-03.md) y [evidencia y límites](../../agente/evidencia-fase-03.md). Se mantienen sin cambios los campos públicos del PDF, la autenticación, los modelos/CRUD/planes ajenos y el SQL compartido. El único cambio compartido de esta fase es incorporar boto3 en `requirements.txt`.

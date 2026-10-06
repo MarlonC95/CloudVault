@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Ensayo S3 de Dani</title>
+<style>body{font:18px system-ui;max-width:680px;margin:80px auto;padding:24px;background:#f5f7fa;color:#18304c}button{font:inherit;padding:12px 20px;background:#2357ce;color:white;border:0;border-radius:8px}pre{white-space:pre-wrap;line-height:1.6}</style>
+<h1>Carga directa al bucket</h1><p>Ensayo aislado de la fase 03. Se utiliza un texto sintético y se limpia al terminar.</p>
+<button id="probar">Probar carga directa</button><pre id="resultado">Listo para probar.</pre>
+<script>
+document.querySelector('#probar').onclick = async () => {
+ const resultado = {put:false,get:false,bytes:false,etag:false};
+ const panel = document.querySelector('#resultado');
+ document.querySelector('#probar').disabled = true;
+ panel.textContent = 'Probando carga y descarga desde el navegador…';
+ try {
+  const config = await (await fetch('/config')).json();
+  const texto = 'CloudVault: carga directa desde navegador, fase 03.';
+  const carga = await fetch(config.put,{method:'PUT',headers:{'Content-Type':'text/plain'},body:texto});
+  resultado.put = carga.ok;
+  resultado.etag = !!carga.headers.get('ETag');
+  if(carga.ok){
+   const descarga = await fetch(config.get);
+   resultado.get = descarga.ok;
+   resultado.bytes = descarga.ok && (await descarga.text()) === texto;
+  }
+ } catch { /* Mensaje fijo; nunca mostrar URLs firmadas ni excepciones. */ }
+ panel.textContent = `PUT directo: ${resultado.put ? 'OK' : 'FALLÓ'}\nGET directo: ${resultado.get ? 'OK' : 'FALLÓ'}\nContenido idéntico: ${resultado.bytes ? 'OK' : 'FALLÓ'}\nETag accesible: ${resultado.etag ? 'SÍ' : 'NO'}`;
+ await fetch('/resultado',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(resultado)});
+};
+</script></html>

@@ -28,7 +28,13 @@ build/
 .idea/
 .vscode/
 .obsidian/
-agente/
+agente/*
+!agente/contrato-fase-01.openapi.json
+!agente/cliente-s3-fase-03.md
+!agente/evidencia-fase-03.md
+!agente/referencias/
+agente/referencias/*
+!agente/referencias/esquema-vigente.sql
 auditoria/
 *.swp
 *.swo
@@ -44,3 +50,4 @@ htmlcov/
 .coverage
 .pytest_cache/
 coverage/
+agent.md

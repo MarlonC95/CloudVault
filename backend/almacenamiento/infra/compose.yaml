@@ -1,0 +1,14 @@
+name: cloudvault-dani-s3-tests
+services:
+  pruebas:
+    build:
+      context: ../../..
+      dockerfile: backend/almacenamiento/infra/Dockerfile
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
