@@ -1,9 +1,10 @@
 import os
 from datetime import timedelta
 
-from django.template.defaultfilters import filesizeformat
 from django.utils import timezone
 from rest_framework import serializers
+
+from common.formatting import bytes_legibles
 
 from .models import FileMetadata, Folder
 
@@ -70,7 +71,7 @@ class FileMetadataSerializer(serializers.ModelSerializer):
         return ext if ext in self.TIPOS_CONOCIDOS else "otro"
 
     def get_tamano_legible(self, obj):
-        return filesizeformat(obj.tamano_bytes)
+        return bytes_legibles(obj.tamano_bytes)
 
     def get_propietario(self, obj):
         return PropietarioSerializer(obj.owner).data

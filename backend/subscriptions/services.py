@@ -2,22 +2,14 @@ import calendar
 from datetime import timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 
-UNIDADES = ("B", "KB", "MB", "GB", "TB", "PB")
+from common.formatting import bytes_legibles as formato_bytes
 
 
 def bytes_legibles(valor):
     """Texto legible de un tamaño; ``None`` se muestra como ilimitado (§10.1)."""
     if valor is None:
         return "Ilimitado"
-    tamano = float(valor)
-    if tamano < 1024:
-        return f"{int(tamano)} B"
-    for unidad in UNIDADES[1:]:
-        tamano /= 1024
-        if tamano < 1024:
-            texto = f"{tamano:.1f}".rstrip("0").rstrip(".")
-            return f"{texto} {unidad}"
-    return f"{tamano:.1f} {UNIDADES[-1]}"
+    return formato_bytes(valor)
 
 
 def numero(valor):
