@@ -218,3 +218,67 @@ ADD COLUMN IF NOT EXISTS actualizado_en TIMESTAMP WITH TIME ZONE DEFAULT CURRENT
 
 ALTER TABLE archivos 
 ADD COLUMN IF NOT EXISTS actualizado_en TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+-- =============================================================================
+-- TABLA 12: sesiones_carga
+-- Reserva preventiva de cuota en concurrencia y rastreo de cargas activas
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS sesiones_carga (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    archivo_id UUID NOT NULL UNIQUE,
+    solicitante_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
+    organizacion_id UUID NOT NULL REFERENCES organizaciones(id) ON DELETE CASCADE,
+    carpeta_id UUID REFERENCES carpetas(id) ON DELETE SET NULL,
+    nombre VARCHAR(255) NOT NULL,
+    tipo_mime VARCHAR(100) NOT NULL,
+    tamano_bytes BIGINT NOT NULL CHECK (tamano_bytes >= 0),
+    checksum_sha256 VARCHAR(64) 
+        CHECK (checksum_sha256 IS NULL OR checksum_sha256 ~ '^[0-9a-f]{64}$'),
+    etag VARCHAR(255),
+    clave_temporal VARCHAR(1024) NOT NULL UNIQUE,
+    expira_en TIMESTAMPTZ NOT NULL,
+    estado VARCHAR(10) NOT NULL DEFAULT 'PENDING'
+        CHECK (estado IN ('PENDING', 'CONFIRMED', 'CANCELED', 'EXPIRED')),
+    resultado_confirmacion JSONB,
+    creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actualizado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CHECK (expira_en > creado_en)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sesiones_cuota_pendiente
+    ON sesiones_carga (organizacion_id, expira_en) WHERE estado = 'PENDING';
+
+CREATE INDEX IF NOT EXISTS idx_sesiones_solicitante 
+    ON sesiones_carga (solicitante_id);
+
+DROP TRIGGER IF EXISTS trg_actualizar_sesiones_carga ON sesiones_carga;
+CREATE TRIGGER trg_actualizar_sesiones_carga
+    BEFORE UPDATE ON sesiones_carga
+    FOR EACH ROW EXECUTE FUNCTION trigger_actualizar_marca_tiempo();
+
+-- =============================================================================
+-- TABLA 13: intentos_publicacion
+-- Ledger técnico de confirmación e idempotencia con el Bucket S3 / Tigris
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS intentos_publicacion (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sesion_id UUID NOT NULL UNIQUE REFERENCES sesiones_carga(id) ON DELETE RESTRICT,
+    clave_final VARCHAR(1024) NOT NULL UNIQUE,
+    etag_origen VARCHAR(255) NOT NULL,
+    version_origen VARCHAR(255),
+    checksum_origen VARCHAR(64),
+    etag_final VARCHAR(255),
+    version_final VARCHAR(255),
+    estado VARCHAR(10) NOT NULL DEFAULT 'PREPARED'
+        CHECK (estado IN ('PREPARED', 'PUBLISHED', 'ABANDONED', 'CLEANED')),
+    creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actualizado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+DROP TRIGGER IF EXISTS trg_actualizar_intentos_publicacion ON intentos_publicacion;
+CREATE TRIGGER trg_actualizar_intentos_publicacion
+    BEFORE UPDATE ON intentos_publicacion
+    FOR EACH ROW EXECUTE FUNCTION trigger_actualizar_marca_tiempo();
+
+-- Conceder permisos de lectura al rol de evaluación lector_cloudvault
+GRANT SELECT ON sesiones_carga TO lector_cloudvault;
+GRANT SELECT ON intentos_publicacion TO lector_cloudvault;
