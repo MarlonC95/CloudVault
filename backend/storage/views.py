@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
-from rest_framework import viewsets
+from django.shortcuts import get_object_or_404
+from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 
 from common.pagination import EnvelopePagination
@@ -139,3 +140,84 @@ class FolderViewSet(viewsets.ModelViewSet):
         folder.save(update_fields=["padre", "ruta_completa"])
         _propagate_path(folder)
         return ok(FolderSerializer(folder, context={"request": request}).data)
+
+
+class FileMetadataViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    serializer_class = FileMetadataSerializer
+    pagination_class = EnvelopePagination
+    http_method_names = ["get", "patch", "post"]
+
+    TIPOS_CONOCIDOS = {"pdf", "zip", "png", "js", "xlsx", "mp4", "docx"}
+
+    def get_queryset(self):
+        return FileMetadata.objects.filter(owner=self.request.user, en_papelera=False)
+
+    def _aplicar_filtros(self, queryset):
+        carpeta = self.request.query_params.get("carpeta")
+        if carpeta == "null":
+            queryset = queryset.filter(carpeta__isnull=True)
+        elif carpeta:
+            queryset = queryset.filter(carpeta_id=carpeta)
+
+        busqueda = self.request.query_params.get("busqueda")
+        if busqueda:
+            queryset = queryset.filter(nombre_original__icontains=busqueda)
+
+        tipo = self.request.query_params.get("tipo")
+        if tipo in self.TIPOS_CONOCIDOS:
+            queryset = queryset.filter(nombre_original__iendswith=f".{tipo}")
+        elif tipo == "otro":
+            for t in self.TIPOS_CONOCIDOS:
+                queryset = queryset.exclude(nombre_original__iendswith=f".{t}")
+
+        return queryset.order_by("-actualizado_en")
+
+    def list(self, request, *args, **kwargs):
+        queryset = self._aplicar_filtros(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(queryset, many=True)
+        return ok(serializer.data)
+
+    def update(self, request, *args, **kwargs):
+        archivo = self.get_object()
+        nombre = request.data.get("nombre", "").strip() if isinstance(request.data.get("nombre"), str) else ""
+        if not nombre:
+            return fail("VALIDATION_ERROR", {"nombre": ["El nombre del archivo es obligatorio."]})
+
+        data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
+        data["nombre_original"] = nombre
+        serializer = self.get_serializer(archivo, data=data, partial=kwargs.get("partial", False))
+        if not serializer.is_valid():
+            return fail("VALIDATION_ERROR", serializer.errors)
+        serializer.save()
+        return ok(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def mover(self, request, pk=None):
+        archivo = get_object_or_404(self.get_queryset(), pk=pk)
+        carpeta_id = request.data.get("carpeta_id")
+
+        if carpeta_id is None or carpeta_id == "null":
+            carpeta = None
+        else:
+            try:
+                carpeta = Folder.objects.get(pk=carpeta_id, owner=request.user)
+            except (Folder.DoesNotExist, DjangoValidationError):
+                return fail("VALIDATION_ERROR", {"carpeta_id": ["La carpeta indicada no existe."]})
+
+        archivo.carpeta = carpeta
+        archivo.save(update_fields=["carpeta", "actualizado_en"])
+        return ok({
+            "id": str(archivo.pk),
+            "nombre": archivo.nombre_original,
+            "carpeta_id": str(carpeta.pk) if carpeta else None,
+            "fecha_modificacion": archivo.actualizado_en,
+        })
