@@ -1,4 +1,4 @@
-"""Únicamente inicio de carga de Dani; JWT existente y errores locales del PDF."""
+"""Rutas de almacenamiento de Dani; JWT existente y errores locales del PDF."""
 
 from io import BytesIO
 
@@ -16,10 +16,13 @@ from .configuracion_inicio import (
     servicios_compartidos, verificador_publicacion,
 )
 from .confirmacion import ServicioConfirmacionCargas
+from .configuracion_descarga import vigencia_descarga
+from .descarga import ServicioDescargas
 from .errores import error_de_almacenamiento
 from .inicio import ServicioInicioCargas
 from .serializers import (
     ConfirmarCargaInputSerializer, ConfirmarCargaSuccessSerializer,
+    DescargaSuccessSerializer,
     ErrorSerializer, IniciarCargaInputSerializer, IniciarCargaSuccessSerializer,
 )
 
@@ -85,4 +88,39 @@ class ConfirmarCargaView(IniciarCargaView):
             servicios_factory=servicios_compartidos, cliente_factory=cliente_firmador,
             verificador=verificador_publicacion(), maximo_bytes=maximo_publicacion())
         datos = servicio.confirmar(solicitante_id=request.user.pk, archivo_id=id, datos=request.data)
+        return Response(datos, status=200)
+
+
+class DescargaView(IniciarCargaView):
+    http_method_names = ["get", "options"]
+
+    def get_exception_handler(self):
+        def traducir(exc, context):
+            if isinstance(exc, MethodNotAllowed):
+                return Response({"error": {"code": "VALIDATION_ERROR",
+                                           "fields": {"method": ["Usar GET para esta operación."]}}},
+                                status=405)
+            return error_de_almacenamiento(exc, context)
+        return traducir
+
+    @extend_schema(
+        operation_id="descarga", tags=["Almacenamiento"],
+        summary="Obtener descarga temporal autorizada",
+        description="Reautoriza archivo confirmado y emite GET firmado como adjunto. Requiere proveedor real; sin él 503.",
+        request=None,
+        responses={200: DescargaSuccessSerializer,
+                   **{estado: ErrorSerializer for estado in (400, 401, 403, 404, 405, 429, 500, 503)}},
+    )
+    def get(self, request, id):
+        if request.query_params:
+            raise ParseError("La descarga no admite parámetros de consulta.")
+        stream = request.stream
+        if stream is not None and stream.read(1):
+            raise ParseError("La descarga no admite cuerpo de solicitud.")
+        servicio = ServicioDescargas(
+            servicios_factory=servicios_compartidos, cliente_factory=cliente_firmador,
+            vigencia=vigencia_descarga(),
+            limite=entero_configurado("ALMACENAMIENTO_DESCARGAS_POR_VENTANA", 30),
+            ventana_segundos=entero_configurado("ALMACENAMIENTO_VENTANA_DESCARGAS_SEGUNDOS", 60))
+        datos = servicio.descargar(solicitante_id=request.user.pk, archivo_id=id)
         return Response(datos, status=200)

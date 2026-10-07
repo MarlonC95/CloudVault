@@ -1,4 +1,4 @@
-"""Contrato de Dani: inicio/confirmación implementados; descarga aún de diseño."""
+"""Contrato de Dani: tres rutas implementadas con integración real pendiente."""
 
 import argparse
 import json
@@ -105,9 +105,7 @@ def crear_openapi(*, politica=None):
         operation = {
             "operationId": operacion.nombre,
             "tags": ["Almacenamiento de Dani — diseño"],
-            "x-estado-implementacion": ("endpoint-implementado-integracion-pendiente"
-                                        if operacion in (INICIAR_CARGA, CONFIRMAR_CARGA)
-                                        else "contrato-validado-endpoint-pendiente"),
+            "x-estado-implementacion": "endpoint-implementado-integracion-pendiente",
             "security": [{"BearerAuth": []}],
             "responses": {
                 str(operacion.estado_exito): {
@@ -139,11 +137,12 @@ def crear_openapi(*, politica=None):
         "openapi": "3.0.3",
         "info": {
             "title": "CloudVault — contrato de almacenamiento de Dani",
-            "version": "fase-05",
+            "version": "fase-07",
             "description": (
                 "Contrato de diseño basado en Contratos de API - CloudVault.pdf. "
-                "Inicio y confirmación instalados y probados con servicios sintéticos; proveedor real pendiente. "
-                "Descarga conserva su contrato de diseño, sin endpoint instalado."
+                "Inicio, confirmación y descarga instalados y probados con servicios sintéticos; "
+                "mantenimiento interno y periódico propio disponible. "
+                "Proveedor real, SQL compartido y ejecución periódica en el ambiente compartido pendientes."
             ),
         },
         "x-fuente": "agente/referencias/contrato-api-vigente.pdf, secciones 0, 4 y 5",

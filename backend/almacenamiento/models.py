@@ -63,3 +63,36 @@ class IntentoPublicacion(models.Model):
     class Meta:
         managed = False
         db_table = "intentos_publicacion"
+
+
+class EstadoMantenimiento(models.TextChoices):
+    PENDING = "PENDING"
+    RETRY = "RETRY"
+    RECONCILE = "RECONCILE"
+    VERIFIED = "VERIFIED"
+
+
+class TrabajoMantenimiento(models.Model):
+    """Diario propio; VERIFIED acredita el último barrido, no ausencia perpetua.
+
+    La FK conserva la sesión/tombstone. El SQL complementario lo instala el
+    responsable, nunca AppConfig ni el comando de mantenimiento.
+    """
+
+    sesion = models.OneToOneField(SesionCarga, primary_key=True, on_delete=models.PROTECT,
+                                 db_column="sesion_id")
+    cancelar = models.BooleanField(db_default=False)
+    copia_concluida = models.BooleanField(db_default=False)
+    estado = models.CharField(max_length=16, choices=EstadoMantenimiento.choices,
+                              db_default="PENDING")
+    intentos = models.PositiveBigIntegerField(db_default=0)
+    fallos_consecutivos = models.PositiveIntegerField(db_default=0)
+    proximo_intento = models.DateTimeField(db_default=Now())
+    causa = models.CharField(max_length=32, db_default="")
+    verificado_en = models.DateTimeField(null=True)
+    creado_en = models.DateTimeField(db_default=Now())
+    actualizado_en = models.DateTimeField(db_default=Now())
+
+    class Meta:
+        managed = False
+        db_table = '"almacenamiento_tecnico"."trabajos_mantenimiento"'

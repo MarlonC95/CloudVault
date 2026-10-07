@@ -13,7 +13,10 @@ from django.db import connections
 from django.utils import timezone
 
 from .contrato import CLAVE_FINAL_MAXIMA, TAMANO_SQL_MAXIMO
-from .integracion import ArchivoVerificado, CuotaVigente, DependenciasAlmacenamiento, DestinoAutorizado
+from .integracion import (
+    ArchivoVerificado, CuotaVigente, DependenciasAlmacenamiento, DestinoAutorizado,
+    InspeccionObjetoTecnico,
+)
 from .persistencia import IntegridadCarga
 from .serializers import NombreArchivo, TipoMime
 from .validacion import validar_checksum, validar_texto_tecnico
@@ -89,3 +92,22 @@ class ServiciosCompartidosValidados:
         if archivo.archivo_id != archivo_id or archivo.solicitante_id != solicitante_id:
             raise IntegridadCarga("El servicio devolvió otro archivo o actor")
         return archivo
+
+    def inspeccionar_objeto_tecnico(self, *, sesion_id, organizacion_id, clave):
+        if (not isinstance(sesion_id, UUID) or not isinstance(organizacion_id, UUID)
+                or not connections[self.using].in_atomic_block
+                or self._cuota_bloqueada.get() != organizacion_id):
+            raise IntegridadCarga("Inspección fuera de coordinación SQL")
+        consultar = getattr(self.servicios, "inspeccionar_objeto_tecnico", None)
+        if not callable(consultar):
+            from .contrato import CodigoError
+            from .errores import ErrorCarga
+            raise ErrorCarga(CodigoError.SERVICE_UNAVAILABLE)
+        resultado = consultar(sesion_id=sesion_id, organizacion_id=organizacion_id, clave=clave)
+        if (not isinstance(resultado, InspeccionObjetoTecnico)
+                or (resultado.sesion_id, resultado.organizacion_id, resultado.clave)
+                != (sesion_id, organizacion_id, clave)
+                or type(resultado.referenciado) is not bool
+                or type(resultado.copia_concluida) is not bool):
+            raise IntegridadCarga("Evidencia técnica incompatible")
+        return resultado

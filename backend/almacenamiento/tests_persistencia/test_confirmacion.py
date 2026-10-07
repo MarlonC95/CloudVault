@@ -263,10 +263,8 @@ class ConfirmacionPersistenteTests(SimpleTestCase):
 
     def test_commit_final_fallido_no_exito_y_reintento_mismo_final(self):
         original = connection.commit
-        commits = []
         def commit():
-            commits.append(1)
-            if len(commits) == 3:
+            if IntentoPublicacion.objects.filter(estado=EstadoPublicacion.PUBLISHED).exists():
                 raise OperationalError("synthetic-final-commit")
             original()
         with patch.object(connection, "commit", side_effect=commit), self.assertRaises(OperationalError):

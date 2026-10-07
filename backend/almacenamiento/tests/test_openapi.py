@@ -3,7 +3,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from django.test import SimpleTestCase
-from django.urls import Resolver404, resolve
+from django.urls import resolve
 from drf_spectacular.generators import SchemaGenerator
 from drf_spectacular.validation import validate_schema
 from jsonschema import Draft4Validator, FormatChecker
@@ -55,9 +55,7 @@ class OpenAPIContratoTests(SimpleTestCase):
             operation = self.documento["paths"][ruta][metodo]
             self.assertIn(status, operation["responses"])
             self.assertEqual(operation["security"], [{"BearerAuth": []}])
-            self.assertEqual(operation["x-estado-implementacion"],
-                             "endpoint-implementado-integracion-pendiente" if "descarga" not in ruta
-                             else "contrato-validado-endpoint-pendiente")
+            self.assertEqual(operation["x-estado-implementacion"], "endpoint-implementado-integracion-pendiente")
         inicio = self.documento["paths"]["/api/v1/archivos/iniciar-carga/"]["post"]
         self.assertIn("409", inicio["responses"])
         self.assertEqual(inicio["responses"]["409"]["description"], "CUOTA_EXCEDIDA")
@@ -119,7 +117,7 @@ class OpenAPIContratoTests(SimpleTestCase):
         file = Path(__file__).resolve().parents[3] / "agente" / "contrato-fase-01.openapi.json"
         self.assertEqual(json.loads(file.read_text()), self.documento)
 
-    def test_router_y_swagger_reales_no_publican_endpoints_aun_pendientes(self):
+    def test_router_y_swagger_publican_las_tres_rutas_instaladas(self):
         for ruta in self.documento["paths"]:
             if "iniciar-carga" in ruta:
                 self.assertEqual(resolve(ruta).url_name, "iniciar-carga")
@@ -127,14 +125,16 @@ class OpenAPIContratoTests(SimpleTestCase):
             if "confirmar-carga" in ruta:
                 self.assertEqual(resolve(ruta.replace("{id}", ARCHIVO_ID)).url_name, "confirmar-carga")
                 continue
-            with self.assertRaises(Resolver404):
-                resolve(ruta.replace("{id}", ARCHIVO_ID))
+            self.assertEqual(resolve(ruta.replace("{id}", ARCHIVO_ID)).url_name, "descarga")
         installed = SchemaGenerator().get_schema(public=True)
         self.assertEqual(set(installed["paths"]), {
             "/api/v1/auth/registro/", "/api/v1/auth/login/",
             "/api/v1/auth/recuperar-contrasena/",
             "/api/v1/archivos/iniciar-carga/",
             "/api/v1/archivos/{id}/confirmar-carga/",
+            "/api/v1/archivos/{id}/descarga/",
         })
         self.assertIn({"CloudVaultBearerAuth": []}, installed["paths"][
             "/api/v1/archivos/iniciar-carga/"]["post"]["security"])
+        self.assertIn({"CloudVaultBearerAuth": []}, installed["paths"][
+            "/api/v1/archivos/{id}/descarga/"]["get"]["security"])

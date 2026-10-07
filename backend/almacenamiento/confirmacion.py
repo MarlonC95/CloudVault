@@ -17,7 +17,7 @@ from auth_workspaces.models import LogAuditoria
 from .contrato import CodigoError
 from .errores import ErrorCarga
 from .integracion import ArchivoVerificado
-from .models import EstadoPublicacion, EstadoSesion, IntentoPublicacion, SesionCarga
+from .models import EstadoPublicacion, EstadoSesion, IntentoPublicacion, SesionCarga, TrabajoMantenimiento
 from .persistencia import IntegridadCarga, RepositorioCargas
 from .s3 import ContenidoS3, ErrorS3, ObjetoS3, _clave, nueva_clave_final
 from .serializers import ArchivoIdSerializer, ConfirmarCargaInputSerializer
@@ -126,7 +126,7 @@ class ServicioConfirmacionCargas:
         raise ErrorCarga(CodigoError.VALIDATION_ERROR,
                          fields={"tamano_bytes": ["El contenido no coincide con el tamaño reservado."]})
 
-    def confirmar(self, *, solicitante_id, archivo_id, datos):
+    def confirmar(self, *, solicitante_id, archivo_id, datos, solo_recuperar=False):
         identificador = ArchivoIdSerializer(data={"id": archivo_id})
         identificador.is_valid(raise_exception=True)
         entrada = ConfirmarCargaInputSerializer(data=datos)
@@ -152,6 +152,8 @@ class ServicioConfirmacionCargas:
                 self._pendiente(actual)
                 self._cuota(servicios, actual)
                 intento = self._intento(actual)
+                if solo_recuperar and intento is None:
+                    raise IntegridadCarga("La recuperación requiere un intento durable")
                 if (intento is not None and "etag" in entrada.validated_data
                         and entrada.validated_data["etag"] != intento.etag_origen):
                     raise ErrorCarga(CodigoError.VALIDATION_ERROR,
@@ -186,10 +188,19 @@ class ServicioConfirmacionCargas:
                             archivo_id=archivo_id, solicitante_id=solicitante_id,
                             clave_final=clave_final, etag_origen=origen.etag,
                             version_origen=origen.version)
+                        TrabajoMantenimiento.objects.using(self.repo.using).get_or_create(sesion_id=actual.pk)
                     # PREPARED ya está confirmado; esta rama es el único emisor.
                     comprobar()
                     cliente.publicar_una_vez(sesion.clave_temporal, intento.clave_final,
                                              etag_origen=intento.etag_origen)
+                    # Solo una respuesta SDK completa acredita que COPY acabó.
+                    # Si el proceso cae antes de persistirlo, mantener ambigüedad.
+                    with self._sql(servicios, sesion, comprobar) as actual:
+                        trabajo, _ = TrabajoMantenimiento.objects.using(self.repo.using).get_or_create(
+                            sesion_id=actual.pk)
+                        trabajo.copia_concluida = True
+                        trabajo.actualizado_en = timezone.now()
+                        trabajo.save(using=self.repo.using, update_fields=["copia_concluida", "actualizado_en"])
                 # Recuperar PREPARED nunca llama COPY ni depende del temporal.
                 try:
                     final = cliente.consultar(intento.clave_final)

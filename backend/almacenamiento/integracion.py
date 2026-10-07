@@ -34,6 +34,24 @@ class ArchivoVerificado:
     checksum_sha256: str | None
 
 
+@dataclass(frozen=True)
+class InspeccionObjetoTecnico:
+    """Evidencia de servidor para una clave exacta, independiente de ACL.
+
+    referenciado incluye cualquier metadato, papelera y organización. Un 404
+    para un actor no acredita ausencia. copia_concluida exige evidencia de que
+    no queda COPY remoto en curso; no se deduce de edad/HEAD/lock perdido.
+    Los escritores de metadatos deben respetar el reclamo de publicador y no
+    referenciar claves técnicas de sesiones terminales.
+    """
+
+    sesion_id: UUID
+    organizacion_id: UUID
+    clave: str
+    referenciado: bool
+    copia_concluida: bool = False
+
+
 class DependenciasAlmacenamiento(Protocol):
     """Contrato interno: cada método autoriza usando datos actuales, nunca el body."""
 
@@ -61,4 +79,14 @@ class DependenciasAlmacenamiento(Protocol):
         self, *, solicitante_id: UUID, archivo_id: UUID
     ) -> ArchivoVerificado:
         """Permiso vigente y archivo confirmado accesible; nunca clave del cliente."""
+        ...
+
+    def inspeccionar_objeto_tecnico(
+        self, *, sesion_id: UUID, organizacion_id: UUID, clave: str
+    ) -> InspeccionObjetoTecnico:
+        """Consulta SQL local bajo cuota/reclamo; nunca I/O remoto ni reparación.
+
+        Necesaria solo para mantenimiento. Sin evidencia disponible debe
+        rechazar o devolver copia_concluida=False, nunca inventarla.
+        """
         ...

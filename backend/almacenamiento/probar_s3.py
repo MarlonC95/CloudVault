@@ -8,11 +8,12 @@ import base64
 import hashlib
 import json
 import logging
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import time
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import uuid4
 
@@ -101,6 +102,35 @@ def ensayo(cliente, claves, informe):
     informe["preflight"] = comprobacion
 
 
+def ensayo_seguridad(cliente, claves, informe):
+    """Fase 8 opt-in: firmas adversas y estabilidad del final en el proveedor.
+
+Host alterado se envía al MISMO endpoint HTTPS con un header Host distinto;
+no se envía la capability ni credenciales a ningún otro dominio.
+"""
+    origen, final = claves[:2]
+    firma = cliente.firmar_put(origen, "text/plain")
+    estado, _, _ = peticion(firma.url, metodo="PUT", cuerpo=b"alterado",
+                           headers={"Content-Type": "application/octet-stream"})
+    informe["put_header_alterado_estado"] = estado
+    informe["put_header_alterado_denegado"] = estado in {401, 403}
+    get = cliente.firmar_get(final)
+    u = urlsplit(get.url)
+    query = [(k, "0"*64 if k == "X-Amz-Signature" else v) for k, v in parse_qsl(u.query)]
+    alterada = urlunsplit((u.scheme, u.netloc, u.path, urlencode(query), ""))
+    estado, _, _ = peticion(alterada)
+    informe["get_firma_alterada_estado"] = estado
+    informe["get_firma_alterada_denegado"] = estado in {401, 403}
+    estado, _, _ = peticion(get.url, headers={"Host": "host-alterado.example.test"})
+    informe["get_host_alterado_estado"] = estado
+    informe["get_host_alterado_rechazado"] = estado in {401, 403, 404}
+    previo = cliente.verificar_contenido(final, maximo_bytes=1024).sha256
+    estado, _, _ = peticion(firma.url, metodo="PUT", cuerpo=b"Contenido nuevo de ensayo", headers=firma.encabezados)
+    informe["reuso_put_estado"] = estado
+    posterior = cliente.verificar_contenido(final, maximo_bytes=1024).sha256
+    informe["final_conserva_hash_tras_reuso_put"] = estado in {200, 201, 204} and previo == posterior
+
+
 def ensayo_navegador(cliente, clave, informe, *, duracion=180):
     """Entrega firmas en memoria; solo el navegador recibe URLs transitorias."""
     config = {"put": cliente.firmar_put(clave, "text/plain").url,
@@ -158,11 +188,20 @@ def ensayo_navegador(cliente, clave, informe, *, duracion=180):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ejecutar", action="store_true", help="Crear y limpiar exclusivamente objetos nuevos de este ensayo")
+    parser.add_argument("--ejecutar", action="store_true", help="Crear objetos nuevos propios y ejecutar el ensayo")
+    conservacion = parser.add_mutually_exclusive_group()
+    conservacion.add_argument("--conservar-objetos", dest="conservar", action="store_true",
+                             help="Conservar objetos y registrar limpieza pendiente (por defecto)")
+    conservacion.add_argument("--limpiar-objetos", dest="conservar", action="store_false",
+                             help="Borrar solo objetos del ensayo; requiere autorización explícita")
+    parser.set_defaults(conservar=True)
     parser.add_argument("--perfil", choices=("railway", "minio"), default="railway")
     parser.add_argument("--navegador", action="store_true")
     parser.add_argument("--duracion-navegador", type=int, default=180)
     parser.add_argument("--informe", type=Path)
+    parser.add_argument("--seguridad-fase8", action="store_true",
+                        help="Ensayar header/host/firma alterados y estabilidad del final con bytes pequeños")
+    parser.add_argument("--sin-env", action="store_true", help="Usar exclusivamente variables del proceso, sin leer .env")
     args = parser.parse_args()
     if not args.ejecutar:
         parser.error("El ensayo requiere --ejecutar; realiza escrituras temporales propias.")
@@ -171,14 +210,19 @@ def main():
     # No habilitar debug SDK/HTTP: puede contener firmas/encabezados privados.
     for nombre in ("boto3", "botocore", "urllib3"):
         logging.getLogger(nombre).setLevel(logging.CRITICAL)
-    environ.Env.read_env(Path(__file__).resolve().parents[1] / ".env", overwrite=True)
-    informe = {"perfil": args.perfil, "prueba": str(uuid4())}
+    if not args.sin_env:
+        environ.Env.read_env(Path(__file__).resolve().parents[1] / ".env", overwrite=True)
+    informe = {"perfil": args.perfil, "prueba": str(uuid4()), "fecha_utc": datetime.now(timezone.utc).isoformat(),
+               "alcance": "Cliente S3 real con objetos técnicos nuevos; no integra APIs de negocio/JWT/SQL compartido",
+               "sha256_ensayo": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     prefijo = f"{PREFIJO_PROPIO}pruebas/{informe['prueba']}/"
     claves = [prefijo + str(uuid4()) for _ in range(5)]
     cliente = None
     try:
         cliente = ClienteS3(ConfiguracionS3.desde_entorno(perfil=args.perfil))
         ensayo(cliente, claves[:4], informe)
+        if args.seguridad_fase8:
+            ensayo_seguridad(cliente, claves[:4], informe)
         if args.navegador:
             ensayo_navegador(cliente, claves[4], informe, duracion=args.duracion_navegador)
     except (ErrorS3, ConfiguracionS3Invalida) as error:
@@ -186,9 +230,9 @@ def main():
     except Exception:
         informe["fallo"] = "ensayo_incompleto"
     finally:
-        limpieza = cliente is not None
+        limpieza = cliente is not None and not args.conservar
         if cliente:
-            for clave in claves:
+            for clave in ([] if args.conservar else claves):
                 try:
                     cliente.borrar_tecnico(clave)
                     cliente.borrar_tecnico(clave)
@@ -202,17 +246,27 @@ def main():
                     informe["fallo_limpieza"] = error.tipo
             cliente.cerrar()
         informe["objetos_propios_limpiados"] = limpieza
-    if args.informe:
-        args.informe.write_text(json.dumps(informe, indent=2) + "\n")
-    print(json.dumps(informe, indent=2))
+        informe["objetos_conservados_por_instruccion"] = args.conservar
+        if args.conservar:
+            informe["limpieza"] = "NO_EJECUTADA_POR_INSTRUCCION_USUARIO"
+            informe["claves_nuevas_propias"] = claves
     esenciales = ("put_firmado", "head_tamano_mime", "hash_contenido", "get_firmado_bytes_exactos",
                   "get_anonimo_denegado", "copia_bytes_exactos", "get_antes_de_expirar",
-                  "get_expirado_denegado", "put_expirado_denegado", "objetos_propios_limpiados")
+                  "get_expirado_denegado", "put_expirado_denegado")
     aprobado = all(informe.get(campo) is True for campo in esenciales)
+    aprobado = aprobado and (args.conservar or informe["objetos_propios_limpiados"])
+    if args.seguridad_fase8:
+        aprobado = aprobado and all(informe.get(campo) is True for campo in (
+            "put_header_alterado_denegado", "get_firma_alterada_denegado",
+            "get_host_alterado_rechazado", "final_conserva_hash_tras_reuso_put"))
     if args.navegador:
         aprobado = (aprobado and informe.get("preflight", {}).get("aprobado") is True
                     and all(informe.get("navegador", {}).get(campo) is True
                             for campo in ("put", "get", "bytes", "etag")))
+    informe["operaciones_aprobadas"] = aprobado and "fallo" not in informe
+    if args.informe:
+        args.informe.write_text(json.dumps(informe, indent=2) + "\n")
+    print(json.dumps(informe, indent=2))
     return 0 if aprobado and "fallo" not in informe else 1
 
 

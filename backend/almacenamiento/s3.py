@@ -5,16 +5,18 @@ No accede a SQL, no monta vistas y no sustituye permisos de German.
 
 import hashlib
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
+from urllib.parse import parse_qs, quote, urlsplit
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from .configuracion_s3 import ConfiguracionS3
-from .contrato import CodigoError, PoliticaCarga, MIME_PATRON
+from .contrato import CodigoError, PoliticaCarga, MIME_PATRON, NOMBRE_MAXIMO, NOMBRE_PATRON
 from .errores import ErrorCarga
 from .validacion import validar_texto_tecnico
 
@@ -60,6 +62,21 @@ def nueva_clave_temporal():
 
 def nueva_clave_final(archivo_id):
     return f"{PREFIJO_PROPIO}publicaciones/{UUID(str(archivo_id))}"
+
+
+def disposicion_adjunto(nombre):
+    """Header ASCII seguro: fallback acotado y filename* UTF-8 percent-encoded."""
+    if (not isinstance(nombre, str) or len(nombre) > NOMBRE_MAXIMO
+            or not re.fullmatch(NOMBRE_PATRON, nombre)):
+        raise ValueError("Nombre inválido para descarga")
+    nombre = nombre.strip()
+    try:
+        unicode_seguro = quote(nombre, safe="", encoding="utf-8", errors="strict")
+    except UnicodeError:
+        raise ValueError("Nombre inválido para descarga") from None
+    ascii_nombre = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode()
+    fallback = re.sub(r"[^A-Za-z0-9._ -]", "_", ascii_nombre)[:150].strip(" .") or "archivo"
+    return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{unicode_seguro}'
 
 
 def _clave(clave, *, propia=False):
@@ -110,13 +127,17 @@ class ClienteS3:
         except BotoCoreError:
             raise ErrorS3() from None
 
-    def _firmar(self, operacion, clave, vigencia, maximo, *, mime=None):
+    def _firmar(self, operacion, clave, vigencia, maximo, *, mime=None, respuesta=None):
         _clave(clave, propia=operacion == "put_object")
         if operacion == "put_object" and "/publicaciones/" in clave:
             raise ValueError("No se firma PUT sobre una publicación.")
         if type(vigencia) is not int or not 0 < vigencia <= maximo:
             raise ValueError("Vigencia de firma inválida.")
         parametros = {"Bucket": self.configuracion.bucket, "Key": clave}
+        if respuesta:
+            if operacion != "get_object":
+                raise ValueError("Headers de respuesta solo para descarga")
+            parametros.update(respuesta)
         headers = {}
         if mime is not None:
             if not isinstance(mime, str) or len(mime) > 100 or not re.fullmatch(MIME_PATRON, mime):
@@ -129,7 +150,16 @@ class ClienteS3:
                 operacion, Params=parametros, ExpiresIn=vigencia, HttpMethod=metodo)
         except (BotoCoreError, ClientError):
             raise ErrorS3() from None
-        return FirmaS3(url, metodo, headers, datetime.now(timezone.utc).replace(microsecond=0) + timedelta(seconds=vigencia))
+        # La fecha de respuesta debe coincidir con el timestamp del SDK, incluso
+        # si generar la firma cruza un segundo. Nunca recalcular desde otro reloj.
+        try:
+            query = parse_qs(urlsplit(url).query)
+            if len(query["X-Amz-Date"]) != 1 or query.get("X-Amz-Expires") != [str(vigencia)]:
+                raise ValueError("Firma temporal incoherente")
+            fecha = datetime.strptime(query["X-Amz-Date"][0], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+        except (KeyError, ValueError, TypeError):
+            raise ErrorS3() from None
+        return FirmaS3(url, metodo, headers, fecha + timedelta(seconds=vigencia))
 
     def firmar_put(self, clave, tipo_mime, *, vigencia=None):
         return self._firmar("put_object", clave,
@@ -140,6 +170,20 @@ class ClienteS3:
         return self._firmar("get_object", clave,
                             self.politica.vigencia_descarga_segundos if vigencia is None else vigencia,
                             self.politica.vigencia_descarga_segundos)
+
+    def firmar_descarga(self, clave, nombre, *, vigencia=None, version=None):
+        _clave(clave, propia=True)
+        if "/publicaciones/" not in clave:
+            raise ValueError("La descarga requiere publicación propia")
+        respuesta = {"ResponseContentDisposition": disposicion_adjunto(nombre),
+                     "ResponseContentType": "application/octet-stream",
+                     "ResponseCacheControl": "private, no-store"}
+        if version is not None:
+            validar_texto_tecnico(version, 255, "Versión final")
+            respuesta["VersionId"] = version
+        return self._firmar("get_object", clave,
+                            self.politica.vigencia_descarga_segundos if vigencia is None else vigencia,
+                            self.politica.vigencia_descarga_segundos, respuesta=respuesta)
 
     def consultar(self, clave):
         respuesta = self._operar("head_object", Key=_clave(clave))
