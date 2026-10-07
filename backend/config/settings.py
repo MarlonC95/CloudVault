@@ -28,6 +28,8 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "auth_workspaces",
     "almacenamiento",
+    "storage",
+    "subscriptions",
 ]
 
 MIDDLEWARE = [
@@ -138,7 +140,7 @@ USE_TZ = True
 TIME_ZONE = "UTC"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LANGUAGE_CODE = "es"
-TEST_RUNNER = "config.test_runner.CloudVaultTestRunner"
+TEST_RUNNER = "common.test_runner.CloudVaultTestRunner"
 
 SECURE_SSL_REDIRECT = not DEBUG
 SESSION_COOKIE_SECURE = not DEBUG
