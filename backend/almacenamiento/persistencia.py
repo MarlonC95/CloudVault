@@ -7,15 +7,18 @@ Orden único: bloqueo de cuota -> sesión -> intento -> servicio de metadatos.
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timedelta
 from hashlib import sha256
 from uuid import UUID
 
 from django.db import connections, transaction
 from django.db.models import Sum
 from django.utils import timezone
+from rest_framework.exceptions import Throttled
 
 from .contrato import CLAVE_FINAL_MAXIMA, CLAVE_TEMPORAL_SQL_MAXIMA
+from .contrato import CodigoError
+from .errores import ErrorCarga
 from .integracion import DestinoAutorizado
 from .models import EstadoPublicacion, EstadoSesion, IntentoPublicacion, SesionCarga
 from .serializers import (
@@ -46,6 +49,78 @@ class RepositorioCargas:
         self._ambito = ContextVar(f"ambito_carga_{id(self)}", default=None)
 
     @contextmanager
+    def reclamar_publicador(self, *, archivo_id):
+        """Un publicador por archivo sin mantener una transacción durante S3.
+
+        Requiere conexión PostgreSQL directa o pool de sesiones, nunca pool de
+        transacciones. Recuperar PREPARED solo inspecciona; no vuelve a copiar,
+        incluso si se pierde la conexión y su advisory lock.
+        """
+        connection = connections[self.using]
+        if not isinstance(archivo_id, UUID) or connection.in_atomic_block:
+            raise RuntimeError("Reclamar fuera de una transacción, con UUID")
+        if connection.vendor != "postgresql":
+            raise RuntimeError("La publicación requiere PostgreSQL")
+        connection.ensure_connection()
+        original = connection.connection
+        llave = int.from_bytes(sha256(f"cloudvault:publicador:v1:{archivo_id}".encode()).digest()[:8],
+                               "big", signed=True)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_try_advisory_lock(%s)", [llave])
+            if not cursor.fetchone()[0]:
+                raise ErrorCarga(CodigoError.SERVICE_UNAVAILABLE)
+        try:
+            def comprobar():
+                if connection.connection is not original or original.closed:
+                    raise ErrorCarga(CodigoError.SERVICE_UNAVAILABLE)
+            yield comprobar
+        finally:
+            if connection.connection is original and not original.closed:
+                try:
+                    with connection.cursor() as cursor:
+                        cursor.execute("SELECT pg_advisory_unlock(%s)", [llave])
+                        if not cursor.fetchone()[0]:
+                            connection.close()
+                except Exception:
+                    # No devolver una conexión con un lock retenido al pool.
+                    connection.close()
+
+    @contextmanager
+    def limitar_inicios(self, *, solicitante_id, limite, ventana_segundos):
+        """Limita inicios aceptados globalmente por actor; no cuenta peticiones fallidas.
+
+        Orden: actor -> cuota -> sesión. Usa sesiones durables, sin caché local ni
+        nuevas tablas. El bloqueo dura hasta commit/rollback exterior.
+        """
+        if (not isinstance(solicitante_id, UUID) or type(limite) is not int or limite <= 0
+                or type(ventana_segundos) is not int or ventana_segundos <= 0):
+            raise ValueError("Límite de inicios inválido")
+        connection = connections[self.using]
+        if connection.vendor != "postgresql" or not connection.in_atomic_block:
+            raise RuntimeError("El límite requiere una transacción PostgreSQL")
+        digest = sha256(f"cloudvault:inicios:v1:actor:{solicitante_id}".encode()).digest()
+        llave = int.from_bytes(digest[:8], "big", signed=True)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s)", [llave])
+        ahora = timezone.now()
+        recientes = SesionCarga.objects.using(self.using).filter(
+            solicitante_id=solicitante_id,
+            creado_en__gte=ahora - timedelta(seconds=ventana_segundos),
+        )
+        if recientes.count() >= limite:
+            primera = recientes.order_by("creado_en").first()
+            espera = max(1, (primera.creado_en + timedelta(seconds=ventana_segundos) - ahora).total_seconds())
+            raise Throttled(wait=espera)
+        yield
+
+    def expirar_sin_publicacion(self, *, organizacion_id, ahora):
+        self._exigir_ambito(organizacion_id)
+        return SesionCarga.objects.using(self.using).filter(
+            organizacion_id=organizacion_id, estado=EstadoSesion.PENDING,
+            expira_en__lte=ahora, intentopublicacion__isnull=True,
+        ).update(estado=EstadoSesion.EXPIRED)
+
+    @contextmanager
     def unidad_de_trabajo(self, *, organizacion_id: UUID):
         """Bloqueo PostgreSQL hasta commit/rollback; no usar durante I/O de S3."""
         if self._ambito.get() is not None:
@@ -71,7 +146,8 @@ class RepositorioCargas:
 
     def crear_sesion(self, *, archivo_id: UUID, destino: DestinoAutorizado,
                      nombre: str, tipo_mime: str, tamano_bytes: int,
-                     clave_temporal: str, expira_en: datetime, politica=None) -> SesionCarga:
+                     clave_temporal: str, expira_en: datetime, politica=None,
+                     creado_en=None) -> SesionCarga:
         """Persistir una sesión autorizada. La admisión de cuota corresponde a fase 04."""
         self._exigir_ambito(destino.organizacion_id)
         if not all(isinstance(v, UUID) for v in (archivo_id, destino.solicitante_id, destino.organizacion_id)):
@@ -84,12 +160,19 @@ class RepositorioCargas:
         if not isinstance(expira_en, datetime) or timezone.is_naive(expira_en) or expira_en <= timezone.now():
             raise ValueError("La expiración debe ser futura y tener zona horaria")
         validar_texto_tecnico(clave_temporal, CLAVE_TEMPORAL_SQL_MAXIMA, "Clave temporal")
+        fechas = {}
+        if creado_en is not None:
+            if (not isinstance(creado_en, datetime) or timezone.is_naive(creado_en)
+                    or creado_en >= expira_en):
+                raise ValueError("Creación incompatible con expiración")
+            fechas["creado_en"] = creado_en
         datos = validador.validated_data
         return SesionCarga.objects.using(self.using).create(
             archivo_id=archivo_id, solicitante_id=destino.solicitante_id,
             organizacion_id=destino.organizacion_id, carpeta_id=datos["carpeta_id"],
             nombre=datos["nombre"], tipo_mime=datos["tipo_mime"],
             tamano_bytes=datos["tamano_bytes"], clave_temporal=clave_temporal, expira_en=expira_en,
+            **fechas,
         )
 
     def recuperar_sesion(self, *, archivo_id: UUID, solicitante_id: UUID) -> SesionCarga:
@@ -194,7 +277,8 @@ class RepositorioCargas:
             intento.save(using=self.using, update_fields=["estado"])
         return intento
 
-    def confirmar_atomicamente(self, *, archivo_id, solicitante_id, registrar_metadatos):
+    def confirmar_atomicamente(self, *, archivo_id, solicitante_id, registrar_metadatos,
+                               checksum_final=None):
         """Callback de German en ESTA conexión; sin llamadas S3 dentro del lock.
 
         El coordinador de fase 05 revalida permisos/destino, cuota y contenido.
@@ -216,6 +300,7 @@ class RepositorioCargas:
         intento = IntentoPublicacion.objects.using(self.using).select_for_update().get(sesion=sesion)
         if intento.estado != EstadoPublicacion.PUBLISHED or not intento.etag_final:
             raise EstadoIncompatible("Publicación todavía no verificada")
+        validar_checksum(checksum_final)
         # El savepoint revierte metadatos y sesión incluso si el llamador captura
         # el error y decide confirmar la transacción exterior.
         with transaction.atomic(using=self.using):
@@ -225,6 +310,6 @@ class RepositorioCargas:
             sesion.estado = EstadoSesion.CONFIRMED
             sesion.resultado_confirmacion = resultado
             sesion.etag = intento.etag_final
-            sesion.checksum_sha256 = intento.checksum_origen
+            sesion.checksum_sha256 = (checksum_final if checksum_final is not None else intento.checksum_origen)
             sesion.save(using=self.using, update_fields=["estado", "resultado_confirmacion", "etag", "checksum_sha256"])
         return resultado

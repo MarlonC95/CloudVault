@@ -68,3 +68,25 @@ class EnsayoTests(SimpleTestCase):
         estado, informe, cliente = self.ejecutar(completo)
         self.assertEqual(estado, 0)
         cliente.cerrar.assert_called_once()
+
+    def test_navegador_exige_etag_y_preflight(self):
+        for etag, preflight in ((False, True), (True, False), (True, True)):
+            with self.subTest(etag=etag, preflight=preflight):
+                def completo(cliente, claves, informe):
+                    for campo in ("put_firmado", "head_tamano_mime", "hash_contenido",
+                                  "get_firmado_bytes_exactos", "get_anonimo_denegado",
+                                  "copia_bytes_exactos", "get_antes_de_expirar",
+                                  "get_expirado_denegado", "put_expirado_denegado"):
+                        informe[campo] = True
+                    informe["preflight"] = {"aprobado": preflight}
+                def navegador(cliente, clave, informe, **kwargs):
+                    informe["navegador"] = {"put": True, "get": True, "bytes": True, "etag": etag}
+                with patch("sys.argv", ["probar_s3", "--ejecutar", "--navegador"]), \
+                     patch.object(probar_s3.environ.Env, "read_env"), \
+                     patch.object(probar_s3.ConfiguracionS3, "desde_entorno", return_value=configuracion()), \
+                     patch.object(probar_s3, "ClienteS3") as clase_cliente, \
+                     patch.object(probar_s3, "ensayo", side_effect=completo), \
+                     patch.object(probar_s3, "ensayo_navegador", side_effect=navegador), \
+                     contextlib.redirect_stdout(StringIO()):
+                    clase_cliente.return_value.consultar.side_effect = ErrorS3("ausente")
+                    self.assertEqual(probar_s3.main(), 0 if etag and preflight else 1)

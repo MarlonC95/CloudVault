@@ -197,3 +197,36 @@ class ClienteS3:
         except ErrorS3 as exc:
             if exc.tipo != "ausente":
                 raise
+
+    def publicar_una_vez(self, origen, destino, *, etag_origen):
+        """Una invocación COPY, sin reintentos SDK ni metadatos activos del cliente.
+
+        El coordinador persiste PREPARED antes de llamar. Ante respuesta ambigua
+        solo permite inspeccionar ese destino; jamás repetir esta operación.
+        """
+        _clave(origen, propia=True)
+        _clave(destino, propia=True)
+        if "/temporales/" not in origen or "/publicaciones/" not in destino:
+            raise ValueError("Publicación fuera de las claves propias")
+        validar_texto_tecnico(etag_origen, 255, "ETag")
+        cliente = boto3.session.Session().client(
+            "s3", endpoint_url=self.configuracion.endpoint,
+            region_name=self.configuracion.region,
+            aws_access_key_id=self.configuracion.access_key,
+            aws_secret_access_key=self.configuracion.secret_key,
+            verify=True,
+            config=self._cliente.meta.config.merge(Config(retries={"total_max_attempts": 1})),
+        )
+        try:
+            # Se conserva la pista IfMatch, pero no se confía en ella como prueba.
+            respuesta = cliente.copy_object(
+                Bucket=self.configuracion.bucket, Key=destino,
+                CopySource={"Bucket": self.configuracion.bucket, "Key": origen},
+                CopySourceIfMatch=etag_origen, MetadataDirective="REPLACE",
+                ContentType="application/octet-stream", ContentDisposition="attachment")
+            if not respuesta.get("CopyObjectResult", {}).get("ETag"):
+                raise ErrorS3()
+        except (BotoCoreError, ClientError):
+            raise ErrorS3() from None
+        finally:
+            cliente.close()

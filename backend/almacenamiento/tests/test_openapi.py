@@ -55,7 +55,9 @@ class OpenAPIContratoTests(SimpleTestCase):
             operation = self.documento["paths"][ruta][metodo]
             self.assertIn(status, operation["responses"])
             self.assertEqual(operation["security"], [{"BearerAuth": []}])
-            self.assertEqual(operation["x-estado-implementacion"], "contrato-validado-endpoint-pendiente")
+            self.assertEqual(operation["x-estado-implementacion"],
+                             "endpoint-implementado-integracion-pendiente" if "descarga" not in ruta
+                             else "contrato-validado-endpoint-pendiente")
         inicio = self.documento["paths"]["/api/v1/archivos/iniciar-carga/"]["post"]
         self.assertIn("409", inicio["responses"])
         self.assertEqual(inicio["responses"]["409"]["description"], "CUOTA_EXCEDIDA")
@@ -119,10 +121,20 @@ class OpenAPIContratoTests(SimpleTestCase):
 
     def test_router_y_swagger_reales_no_publican_endpoints_aun_pendientes(self):
         for ruta in self.documento["paths"]:
+            if "iniciar-carga" in ruta:
+                self.assertEqual(resolve(ruta).url_name, "iniciar-carga")
+                continue
+            if "confirmar-carga" in ruta:
+                self.assertEqual(resolve(ruta.replace("{id}", ARCHIVO_ID)).url_name, "confirmar-carga")
+                continue
             with self.assertRaises(Resolver404):
                 resolve(ruta.replace("{id}", ARCHIVO_ID))
         installed = SchemaGenerator().get_schema(public=True)
         self.assertEqual(set(installed["paths"]), {
             "/api/v1/auth/registro/", "/api/v1/auth/login/",
             "/api/v1/auth/recuperar-contrasena/",
+            "/api/v1/archivos/iniciar-carga/",
+            "/api/v1/archivos/{id}/confirmar-carga/",
         })
+        self.assertIn({"CloudVaultBearerAuth": []}, installed["paths"][
+            "/api/v1/archivos/iniciar-carga/"]["post"]["security"])

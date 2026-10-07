@@ -19,6 +19,7 @@ from uuid import uuid4
 import environ
 
 from .configuracion_s3 import ConfiguracionS3, ConfiguracionS3Invalida
+from .cors import ORIGEN_ENSAYO, evaluar_preflight
 from .s3 import ClienteS3, ErrorS3, PREFIJO_PROPIO
 
 
@@ -35,8 +36,9 @@ def peticion(url, *, metodo="GET", cuerpo=None, headers=None):
             return respuesta.status, respuesta.read(65536), dict(respuesta.headers)
     except HTTPError as error:
         estado = error.code
+        headers_respuesta = dict(error.headers or {})
         error.close()
-        return estado, b"", {}
+        return estado, b"", headers_respuesta
     except (URLError, OSError):
         raise ErrorS3("red") from None
 
@@ -91,13 +93,15 @@ def ensayo(cliente, claves, informe):
     estado, _, _ = peticion(breve_put.url, metodo="PUT", cuerpo=contenido, headers=breve_put.encabezados)
     informe["put_expirado_denegado"] = estado in {401, 403}
     estado, _, cors = peticion(firma.url, metodo="OPTIONS", headers={
-        "Origin": "http://127.0.0.1:8765", "Access-Control-Request-Method": "PUT",
+        "Origin": ORIGEN_ENSAYO, "Access-Control-Request-Method": "PUT",
         "Access-Control-Request-Headers": "content-type"})
     informe["preflight_estado"] = estado
-    informe["preflight_permite_origen"] = cors.get("Access-Control-Allow-Origin", cors.get("access-control-allow-origin")) in {"*", "http://127.0.0.1:8765"}
+    comprobacion = evaluar_preflight(estado, cors)
+    informe["preflight_permite_origen"] = comprobacion["permite_origen"]
+    informe["preflight"] = comprobacion
 
 
-def ensayo_navegador(cliente, clave, informe):
+def ensayo_navegador(cliente, clave, informe, *, duracion=180):
     """Entrega firmas en memoria; solo el navegador recibe URLs transitorias."""
     config = {"put": cliente.firmar_put(clave, "text/plain").url,
               "get": cliente.firmar_get(clave).url}
@@ -144,11 +148,12 @@ def ensayo_navegador(cliente, clave, informe):
     with HTTPServer(("127.0.0.1", 8765), Handler) as servidor:
         servidor.timeout = 1
         print("Ensayo de navegador disponible en http://127.0.0.1:8765", flush=True)
-        limite = time.monotonic() + 180
+        limite = time.monotonic() + duracion
         while not terminado and time.monotonic() < limite:
             servidor.handle_request()
     if not terminado:
         informe["navegador"] = {"pendiente": True}
+    print("Servidor de ensayo cerrado.", flush=True)
 
 
 def main():
@@ -156,14 +161,17 @@ def main():
     parser.add_argument("--ejecutar", action="store_true", help="Crear y limpiar exclusivamente objetos nuevos de este ensayo")
     parser.add_argument("--perfil", choices=("railway", "minio"), default="railway")
     parser.add_argument("--navegador", action="store_true")
+    parser.add_argument("--duracion-navegador", type=int, default=180)
     parser.add_argument("--informe", type=Path)
     args = parser.parse_args()
     if not args.ejecutar:
         parser.error("El ensayo requiere --ejecutar; realiza escrituras temporales propias.")
+    if not 0 < args.duracion_navegador <= 240:
+        parser.error("La duración del navegador debe estar entre 1 y 240 segundos.")
     # No habilitar debug SDK/HTTP: puede contener firmas/encabezados privados.
     for nombre in ("boto3", "botocore", "urllib3"):
         logging.getLogger(nombre).setLevel(logging.CRITICAL)
-    environ.Env.read_env(Path(__file__).resolve().parents[1] / ".env")
+    environ.Env.read_env(Path(__file__).resolve().parents[1] / ".env", overwrite=True)
     informe = {"perfil": args.perfil, "prueba": str(uuid4())}
     prefijo = f"{PREFIJO_PROPIO}pruebas/{informe['prueba']}/"
     claves = [prefijo + str(uuid4()) for _ in range(5)]
@@ -172,7 +180,7 @@ def main():
         cliente = ClienteS3(ConfiguracionS3.desde_entorno(perfil=args.perfil))
         ensayo(cliente, claves[:4], informe)
         if args.navegador:
-            ensayo_navegador(cliente, claves[4], informe)
+            ensayo_navegador(cliente, claves[4], informe, duracion=args.duracion_navegador)
     except (ErrorS3, ConfiguracionS3Invalida) as error:
         informe["fallo"] = error.tipo if isinstance(error, ErrorS3) else "configuracion"
     except Exception:
@@ -202,7 +210,9 @@ def main():
                   "get_expirado_denegado", "put_expirado_denegado", "objetos_propios_limpiados")
     aprobado = all(informe.get(campo) is True for campo in esenciales)
     if args.navegador:
-        aprobado = aprobado and all(informe.get("navegador", {}).get(campo) is True for campo in ("put", "get", "bytes"))
+        aprobado = (aprobado and informe.get("preflight", {}).get("aprobado") is True
+                    and all(informe.get("navegador", {}).get(campo) is True
+                            for campo in ("put", "get", "bytes", "etag")))
     return 0 if aprobado and "fallo" not in informe else 1
 
 
