@@ -1,6 +1,6 @@
-# Almacenamiento de Dani — fases 01 a 06
+# Almacenamiento de Dani — fases 01 a 09
 
-Estado al 6 de octubre de 2026: **componentes propios 01–06 implementados/probados**. Ensayo Railway/navegador aprobó PUT/GET/bytes/ETag y limpieza. Inicio/confirmación/descarga instalados; proveedor real, SQL compartido y mantenimiento pendientes. La suite aislada aprobó 237 pruebas. Fase 06 incluye transferencia HTTP local de cinco bytes, sin nueva transferencia Railway.
+Estado al 7 de octubre de 2026: **componentes propios 01–09 implementados y documentación de integración preparada**. [Entrega para Mily](entrega/README.md): OpenAPI, ejemplos ficticios, cliente ejecutable, evidencia y dependencias. Fase 08 verificó Railway S3/CORS/navegador y conexión PostgreSQL de solo lectura. Inicio/confirmación/descarga y mantenimiento propios disponibles; proveedor real, SQL/mantenimiento compartidos, alineación de auth, F04 y prueba React conjunta pendientes. `.env`, objetos y temporales se conservan por instrucción de Dani.
 
 ## Componentes disponibles
 
@@ -10,7 +10,8 @@ Estado al 6 de octubre de 2026: **componentes propios 01–06 implementados/prob
 | `serializers.py` | Validación estricta de inicio/confirmación/ID y estructuras de respuesta |
 | `errores.py` | Traducción local de errores al catálogo del PDF, con respuesta segura |
 | `integracion.py` | Tipos y protocolos para consumir destino, cuota y archivos de los módulos compartidos |
-| `openapi.py` | Exporta el contrato de diseño sin registrar vistas ficticias |
+| `openapi.py`, `schema.py` | Contrato común para exportación y Swagger propio; cuerpos estrictos, UUID, status y headers |
+| `entrega/`, `cliente_integracion.py` | Guía y ejemplos ejecutables para Mily, sin secretos ni cambios React |
 | `models.py` | Mapping `managed=False` completo de las dos tablas técnicas del esquema vigente |
 | `persistencia.py` | Unidades de trabajo, sesiones, pendientes, ledger, transiciones y callback de confirmación atómico |
 | `adaptadores.py` | Valida la frontera con proveedores reales de destino/cuota/metadatos/descarga |
@@ -44,7 +45,7 @@ Desde `backend/`, con `initdb` y `pg_ctl` locales de la misma instalación:
 .venv/bin/python -m almacenamiento.tests_persistencia.ejecutar
 ```
 
-Arranca un clúster nuevo sin TCP en `/private/tmp`, instala la copia SQL literal con prerrequisitos exclusivos de prueba y ejecuta persistencia, adaptadores, contrato y seguridad. Verifica la identidad del servidor antes de los tests y lo detiene/elimina al finalizar. No usa `.env` ni la DB de aplicación. No lanzar `tests_persistencia` con otro runner/configuración. El resultado vigente es **281 pruebas aprobadas con PostgreSQL 17.11**. El desglose vigente es 130 sin DB/red externa y 151 con PostgreSQL aislado. Una prueba usa un servidor HTTP loopback exclusivo y cinco bytes; no utiliza la red externa ni valida la criptografía del servidor S3.
+Arranca un clúster nuevo sin TCP en `/private/tmp`, instala la copia SQL literal con prerrequisitos exclusivos de prueba y ejecuta persistencia, adaptadores, contrato y seguridad. Verifica la identidad del servidor antes de los tests y lo detiene/conserva al finalizar. `--eliminar-temporales` requiere petición explícita de Dani. No usa `.env` ni la DB de aplicación. No lanzar `tests_persistencia` con otro runner/configuración. El hito de fase 07 fue **281 pruebas con PostgreSQL 17.11**; fase 08 aprobó 313 y fase 09 incorpora las pruebas del cliente/entrega. Hay transferencias HTTP loopback de bytes sintéticos; no validan la criptografía del servidor S3 ni usan la red externa.
 
 Los límites SQL de clave temporal y ledger conservan 1024 caracteres; la clave final publicable conserva 255 para caber en `archivos.clave_s3`. Las constantes distinguen estas restricciones. Los validadores compartidos no cambian las reglas del JSON público. `context` se conserva en el handler para aceptar los dos argumentos que pasa DRF; su conexión se probó en una vista exclusiva de test, sin registrar endpoints de almacenamiento.
 
@@ -58,15 +59,16 @@ Con el entorno SQL de aplicación configurado y autorización de lectura:
 
 Devuelve un informe de compatibilidad técnica y advertencias. No instala ni repara SQL. No se ejecutó contra Railway en esta intervención. `managed=False` requiere instalación previa del esquema por Marlon; Django no la realiza.
 
-## Exportar el contrato de diseño
+## Exportar el contrato entregable
 
 Desde `backend/`:
 
 ```bash
 .venv/bin/python -m almacenamiento.openapi --output ../agente/contrato-fase-01.openapi.json
+.venv/bin/python -m almacenamiento.openapi --output almacenamiento/entrega/openapi.json
 ```
 
-El contrato exportado identifica las tres operaciones instaladas con integración pendiente. Swagger real publica inicio, confirmación, descarga y auth.
+Las dos copias deben coincidir con el generador. El contrato exportado identifica las tres operaciones instaladas con integración pendiente. Swagger publica los mismos cuerpos/status/headers para las rutas propias y conserva auth. [Ejemplos y guía de integración](entrega/README.md).
 
 ## Uso posterior
 
@@ -123,7 +125,7 @@ Una URL firmada es una capacidad temporal: quitar permisos impide nuevas emision
 
 ## Cliente S3 — fase 03
 
-`configuracion_s3.py` selecciona perfiles independientes; `s3.py` firma PUT/GET, consulta, verifica hash real por bloques, copia condicionalmente y borra claves técnicas propias. `probar_s3.py` hace un ensayo opt-in con objetos nuevos y limpieza; `ensayo_s3.html` prueba CORS desde un navegador sin modificar React. `infra/` contiene el contenedor de pruebas propio, con contexto limitado mediante `Dockerfile.dockerignore`.
+`configuracion_s3.py` selecciona perfiles independientes; `s3.py` firma PUT/GET, consulta, verifica hash real por bloques, copia condicionalmente y borra claves técnicas propias. `probar_s3.py` hace un ensayo opt-in con objetos nuevos que se conservan por defecto; cualquier limpieza exige petición explícita. `ensayo_s3.html` prueba CORS desde un navegador sin modificar React. `infra/` contiene el contenedor de pruebas propio, con contexto limitado mediante `Dockerfile.dockerignore`.
 
 Se mantienen sin cambios los campos públicos del PDF, la autenticación, los modelos/CRUD/planes ajenos y el SQL compartido. El único cambio compartido de esta fase es incorporar boto3 en `requirements.txt`.
 
@@ -145,10 +147,10 @@ Usa el cliente S3 existente y carga explícitamente `backend/.env`, sin pedir ni
 
 Una respuesta exitosa a PutBucketCors no acredita el arreglo: exige reglas devueltas y un OPTIONS que permita el origen exacto, PUT y content-type. No crea ni borra objetos. No habilitar debug SDK/HTTP.
 
-Validación de transferencia con objetos sintéticos nuevos propios y limpieza:
+Validación de transferencia con objetos sintéticos nuevos propios conservados:
 
 ```bash
-.venv/bin/python -m almacenamiento.probar_s3 --ejecutar --perfil railway --navegador --duracion-navegador 240 --informe /private/tmp/cloudvault-cors-validacion.json
+.venv/bin/python -m almacenamiento.probar_s3 --ejecutar --perfil railway --conservar-objetos --navegador --duracion-navegador 240 --informe /private/tmp/cloudvault-cors-validacion.json
 ```
 
 Abrir `http://127.0.0.1:8765` cuando el programa anuncie disponibilidad y pulsar el botón. Termina tras recibir el resultado o al vencer la ventana; las firmas no se almacenan en el informe. Con `--navegador`, el éxito exige preflight, PUT, GET, bytes exactos y ETag legible. Sin `--navegador`, solo certifica operaciones desde Python y muestra el preflight por separado. La herramienta no integra ni sustituye los endpoints de carga de Django ni el dashboard React.
@@ -164,7 +166,7 @@ El proveedor obligatorio añade `inspeccionar_objeto_tecnico` de `integracion.py
 
 Se limpia solo la clave temporal canónica y, para intentos abandonados no referenciados y concluidos, su final canónico. CONFIRMED/PUBLISHED conserva el final. HEAD/DELETE fuera de transacciones de cuota; timeout de DELETE exige verificar ausencia. Espera hasta expiración más margen, guarda reintentos crecientes y repite barridos de tombstones para recoger PUTs tardíos. VERIFIED/CLEANED acreditan el barrido observado, no ausencia perpetua.
 
-Desde backend, con proveedor y SQL reales preparados:
+Desde backend, con proveedor y SQL reales preparados y autorización expresa para eliminar objetos técnicos:
 
 ```bash
 .venv/bin/python manage.py mantener_cargas

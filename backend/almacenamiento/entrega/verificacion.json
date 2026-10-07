@@ -1,0 +1,118 @@
+{
+  "fase": 9,
+  "fecha_utc": "2026-10-07T14:01:13.737227+00:00",
+  "rama": "feature/minio-presigned-urls",
+  "commit_base": "23db3b384b6f1c9b8044d31c4a951e68ea3a620c",
+  "cambios_sin_commit": true,
+  "alcance_propio_aprobado": true,
+  "conteo_pruebas": {
+    "APROBADO": 327
+  },
+  "pruebas_nuevas_fase09": 14,
+  "duracion_suite_segundos": 10.599,
+  "python": "3.14.7",
+  "django": "5.2.17",
+  "postgresql": 170011,
+  "sql": "REFERENCIA_LITERAL_13_TABLAS_EN_CLUSTER_PRIVADO",
+  "s3": "DOBLE_EN_MEMORIA_Y_FIRMAS_SDK_OFFLINE",
+  "negocio": "PROVEEDOR_ENSAYO_PRIVADO",
+  "autenticacion_recorrido": "ACTOR_AUTORIZADO_SUSTITUIDO_EXPLICITAMENTE",
+  "http_transporte": "LOOPBACK_REAL_PROPIO_SIN_REDIRECCION",
+  "reinicio_postgresql_verificado": true,
+  "cluster_detenido_conservado": true,
+  "env_intacto_verificado": true,
+  "limpieza_remota_ejecutada": false,
+  "nueva_transferencia_railway": false,
+  "integracion_react_certificada": false,
+  "integracion_equipo_certificada": false,
+  "dependencias_pendientes": [
+    "Proveedor real German",
+    "Diario y permisos SQL Marlon",
+    "Mapping auth y autoridad unica de cuota",
+    "Supervisor y CORS origen React",
+    "Prueba conjunta Mily",
+    "F04 reinicio desplegado"
+  ],
+  "fuente_informe": {
+    "ruta": "agente/resultado-fase-09-local-final-v2.json",
+    "sha256": "3a8f440dcf7632db5d579aa360bddce53178f4414d7327e16e950f9d9a6704c2"
+  },
+  "evidencia_fase08_historica": {
+    "resultado-fase-08-reinicio-railway.json": "bef8828711924a79a95e07b0401309d8eaf081e48c109cd736b5d9b05af09abe",
+    "resultado-fase-08-reinicio-entorno-real.json": "7a3119df2bd85264ea45b5df100801a8bad358b73d0b8a9b9591534826c21604",
+    "resultado-fase-08-reinicio-auth.json": "e90aba7e3f8b593f86468d147c7d28ed62b7dfb7f1f36a6953c67f2c7607f86a",
+    "resultado-fase-08-reinicio-navegador-final.json": "81f26dd9fbd74d448dc438012e6ee9f4662da2d87abc0fa3947da80f15d5d177"
+  },
+  "archivos_sha256": {
+    "backend/almacenamiento/openapi.py": "5e6b63c68ff31889f58366e79389ad6de4e5fa2cf3383c9411bc2a838bd1b9a4",
+    "backend/almacenamiento/schema.py": "0370e2cfecc7ccee71333e0a9acdcfad0081af7ba27b7ff44b7d9992220c2a91",
+    "backend/almacenamiento/views.py": "cacdda15ec4f2b07a7cb085c68ceedafd81798fc837774a691c5bea408b0aa82",
+    "backend/almacenamiento/cliente_integracion.py": "ce04c61a9b1b0c4f828b5bb6c221360848b5c3c4df2b32f791a033f53f8019d4",
+    "backend/almacenamiento/tests/test_entrega.py": "4bc3cfb2d81cfb18508cefe4ce11e25d5f003c37ece8e2e33a690342c2932791",
+    "backend/almacenamiento/tests_persistencia/test_entrega.py": "70901c93980f833b4c48b76c9bde6021d0e571718297250cb5be35c8d8c4085f",
+    "backend/almacenamiento/entrega/openapi.json": "92204da22d333577e65992ea9d591c174d2b9e917853c6501986b5fd011db4df",
+    "backend/almacenamiento/entrega/ejemplos.json": "85f2a6a80f49944c4b0f8de82caf902a4a373b5085e55c19fd507a6f84334641",
+    "backend/almacenamiento/entrega/README.md": "135e23a1911435fa3b7ca43802bc31937017698c2331a381826616dce3de26e3",
+    "backend/almacenamiento/entrega/dependencias.md": "0d5ee59532a86c8c29190276f70793707e36cbf16ec675bb2013d87217f013f1",
+    "agente/referencias/esquema-vigente.sql": "e9cd5af794c1bf7afc3d6aa08e53ea02ff493dff540ab6802bfe9c7344867d30",
+    "agente/referencias/contrato-api-vigente.pdf": "6eeff62ae63321a75cdab221c25d7855fd8a964034e4ed4f1f3c490aa7f3e059"
+  },
+  "casos_fase09": [
+    {
+      "id": "almacenamiento.tests_persistencia.test_entrega.ClienteEntregaPersistenteTests.test_bytes_get_distintos_no_acreditan_integracion",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests_persistencia.test_entrega.ClienteEntregaPersistenteTests.test_confirmacion_falla_conserva_id_sin_reinicio_ni_delete",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests_persistencia.test_entrega.ClienteEntregaPersistenteTests.test_ejemplo_ejecutable_vistas_sql_reserva_uso_y_contrato",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests_persistencia.test_entrega.ClienteEntregaPersistenteTests.test_etag_no_expuesto_confirma_con_json_vacio",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests.test_entrega.ClienteGuardasTests.test_configuracion_invalida_no_hace_red",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests.test_entrega.ClienteGuardasTests.test_error_transporte_no_divulga_url_token_o_mensaje",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests.test_entrega.ClienteGuardasTests.test_flag_obligatorio_antes_de_crear_transporte",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests.test_entrega.ClienteGuardasTests.test_origen_storage_ajeno_se_rechaza_antes_de_put",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests.test_entrega.ClienteGuardasTests.test_transporte_http_real_binario_redireccion_y_limite",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests.test_entrega.EntregaContratoTests.test_ejemplos_ficticios_admitidos_por_contrato",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests.test_entrega.EntregaContratoTests.test_errores_http_reales_y_headers_validan_contrato",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests.test_entrega.EntregaContratoTests.test_exportacion_entregable_actual_y_sin_rutas_inventadas",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests.test_entrega.EntregaContratoTests.test_swagger_rechaza_tipos_coercionados_y_campos_extra",
+      "estado": "APROBADO"
+    },
+    {
+      "id": "almacenamiento.tests.test_entrega.EntregaContratoTests.test_swagger_y_exportacion_comparten_cuerpos_status_headers_y_uuid",
+      "estado": "APROBADO"
+    }
+  ]
+}

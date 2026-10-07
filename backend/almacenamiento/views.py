@@ -20,11 +20,9 @@ from .configuracion_descarga import vigencia_descarga
 from .descarga import ServicioDescargas
 from .errores import error_de_almacenamiento
 from .inicio import ServicioInicioCargas
-from .serializers import (
-    ConfirmarCargaInputSerializer, ConfirmarCargaSuccessSerializer,
-    DescargaSuccessSerializer,
-    ErrorSerializer, IniciarCargaInputSerializer, IniciarCargaSuccessSerializer,
-)
+from .contrato import CONFIRMAR_CARGA, DESCARGA, INICIAR_CARGA
+from .openapi import documentacion_operacion
+from .schema import EsquemaAlmacenamiento
 
 
 class JSONInicioParser(JSONParser):
@@ -36,6 +34,7 @@ class JSONInicioParser(JSONParser):
 
 
 class IniciarCargaView(APIView):
+    schema = EsquemaAlmacenamiento()
     authentication_classes = [CloudVaultJWTAuthentication]
     permission_classes = [IsAuthenticated]
     parser_classes = [JSONInicioParser]
@@ -56,12 +55,9 @@ class IniciarCargaView(APIView):
         return response
 
     @extend_schema(
-        operation_id="iniciar_carga", tags=["Almacenamiento"],
+        **documentacion_operacion(INICIAR_CARGA),
         summary="Autorizar y reservar una carga",
         description="Reserva durable antes de entregar PUT. Requiere proveedor real de destino/cuota; sin él devuelve 503.",
-        request=IniciarCargaInputSerializer,
-        responses={201: IniciarCargaSuccessSerializer,
-                   **{estado: ErrorSerializer for estado in (400, 401, 403, 404, 405, 409, 429, 500, 503)}},
     )
     def post(self, request):
         servicio = ServicioInicioCargas(
@@ -76,12 +72,9 @@ class IniciarCargaView(APIView):
 
 class ConfirmarCargaView(IniciarCargaView):
     @extend_schema(
-        operation_id="confirmar_carga", tags=["Almacenamiento"],
+        **documentacion_operacion(CONFIRMAR_CARGA),
         summary="Verificar y confirmar una carga",
         description="COPY una vez, hash final en proceso acotado y metadatos atómicos. Requiere proveedor real; sin él 503.",
-        request=ConfirmarCargaInputSerializer,
-        responses={200: ConfirmarCargaSuccessSerializer,
-                   **{estado: ErrorSerializer for estado in (400, 401, 403, 404, 405, 409, 500, 503)}},
     )
     def post(self, request, id):
         servicio = ServicioConfirmacionCargas(
@@ -104,12 +97,9 @@ class DescargaView(IniciarCargaView):
         return traducir
 
     @extend_schema(
-        operation_id="descarga", tags=["Almacenamiento"],
+        **documentacion_operacion(DESCARGA),
         summary="Obtener descarga temporal autorizada",
         description="Reautoriza archivo confirmado y emite GET firmado como adjunto. Requiere proveedor real; sin él 503.",
-        request=None,
-        responses={200: DescargaSuccessSerializer,
-                   **{estado: ErrorSerializer for estado in (400, 401, 403, 404, 405, 429, 500, 503)}},
     )
     def get(self, request, id):
         if request.query_params:

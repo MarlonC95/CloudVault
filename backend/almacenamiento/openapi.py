@@ -2,6 +2,7 @@
 
 import argparse
 import json
+from copy import deepcopy
 from pathlib import Path
 
 from .contrato import (
@@ -17,6 +18,13 @@ from .contrato import (
     PoliticaCarga,
     UUID_PATRON,
 )
+
+
+ESTADOS_POR_OPERACION = {
+    INICIAR_CARGA.nombre: (400, 401, 403, 404, 405, 409, 429, 500, 503),
+    CONFIRMAR_CARGA.nombre: (400, 401, 403, 404, 405, 409, 500, 503),
+    DESCARGA.nombre: (400, 401, 403, 404, 405, 429, 500, 503),
+}
 
 
 def _objeto(properties, *, required=None):
@@ -91,7 +99,7 @@ def crear_openapi(*, politica=None):
                 "type": "object",
                 "additionalProperties": {"type": "array", "items": {"type": "string"}},
             },
-        }, required=["code"]) }),
+        }) }),
     }
     paths = {}
     for operacion, entrada, salida in (
@@ -99,12 +107,10 @@ def crear_openapi(*, politica=None):
         (CONFIRMAR_CARGA, "ConfirmarCargaInput", "ConfirmarCargaSuccess"),
         (DESCARGA, None, "DescargaSuccess"),
     ):
-        errores = sorted(set(ESTADOS_HTTP_ERROR.values()))
-        if operacion == DESCARGA:
-            errores.remove(409)
+        errores = ESTADOS_POR_OPERACION[operacion.nombre]
         operation = {
             "operationId": operacion.nombre,
-            "tags": ["Almacenamiento de Dani — diseño"],
+            "tags": ["Almacenamiento"],
             "x-estado-implementacion": "endpoint-implementado-integracion-pendiente",
             "security": [{"BearerAuth": []}],
             "responses": {
@@ -116,7 +122,7 @@ def crear_openapi(*, politica=None):
                     str(estado): {
                         "description": ", ".join(
                             codigo.value for codigo, http in ESTADOS_HTTP_ERROR.items()
-                            if http == estado
+                            if http == (400 if estado == 405 else estado)
                         ),
                         "content": _contenido("Error"),
                     } for estado in errores
@@ -132,14 +138,26 @@ def crear_openapi(*, politica=None):
             operation["parameters"] = [{
                 "name": "id", "in": "path", "required": True, "schema": uuid,
             }]
+        for estado, respuesta in operation["responses"].items():
+            respuesta["headers"] = {
+                "Cache-Control": {"schema": {"type": "string", "enum": ["no-store"]}},
+                "Referrer-Policy": {"schema": {"type": "string", "enum": ["no-referrer"]}},
+            }
+            if estado == "401":
+                respuesta["headers"]["WWW-Authenticate"] = {
+                    "schema": {"type": "string", "enum": ["Bearer"]}}
+            if estado == "429":
+                respuesta["headers"]["Retry-After"] = {
+                    "description": "Segundos hasta reintentar cuando el limitador los conoce.",
+                    "schema": {"type": "string", "pattern": "^[0-9]+$"}}
         paths[operacion.ruta] = {operacion.metodo.lower(): operation}
     return {
         "openapi": "3.0.3",
         "info": {
             "title": "CloudVault — contrato de almacenamiento de Dani",
-            "version": "fase-07",
+            "version": "fase-09",
             "description": (
-                "Contrato de diseño basado en Contratos de API - CloudVault.pdf. "
+                "Contrato ejecutable basado en Contratos de API - CloudVault.pdf. "
                 "Inicio, confirmación y descarga instalados y probados con servicios sintéticos; "
                 "mantenimiento interno y periódico propio disponible. "
                 "Proveedor real, SQL compartido y ejecución periódica en el ambiente compartido pendientes."
@@ -153,6 +171,58 @@ def crear_openapi(*, politica=None):
                 "BearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"},
             },
         },
+    }
+
+
+def expandir_schema(schema, documento):
+    """Fragmentos autónomos para Swagger; no reemplaza esquemas de otros módulos."""
+    if isinstance(schema, list):
+        return [expandir_schema(item, documento) for item in schema]
+    if not isinstance(schema, dict):
+        return deepcopy(schema)
+    if "$ref" in schema:
+        objetivo = documento
+        for segmento in schema["$ref"].removeprefix("#/").split("/"):
+            objetivo = objetivo[segmento]
+        return expandir_schema(objetivo, documento)
+    return {clave: expandir_schema(valor, documento) for clave, valor in schema.items()}
+
+
+def documentacion_operacion(operacion):
+    """Decoración propia de drf-spectacular desde el mismo contrato exportable."""
+    from drf_spectacular.utils import OpenApiParameter, OpenApiResponse
+
+    documento = crear_openapi()
+    datos = documento["paths"][operacion.ruta][operacion.metodo.lower()]
+    respuestas = {
+        int(estado): OpenApiResponse(
+            response=expandir_schema(respuesta["content"]["application/json"]["schema"], documento),
+            description=respuesta["description"],
+        ) for estado, respuesta in datos["responses"].items()
+    }
+    parametros = [OpenApiParameter(
+        nombre, type=definicion["schema"], location=OpenApiParameter.HEADER,
+        response=[int(estado)], description=definicion.get("description", ""),
+    ) for estado, respuesta in datos["responses"].items()
+        for nombre, definicion in respuesta["headers"].items()]
+    # Un solo parámetro de header por nombre, con todos sus status asociados.
+    headers = {}
+    for parametro in parametros:
+        if parametro.name in headers:
+            headers[parametro.name].response.extend(parametro.response)
+        else:
+            headers[parametro.name] = parametro
+    parametros = list(headers.values())
+    for parametro in datos.get("parameters", []):
+        parametros.append(OpenApiParameter(parametro["name"], type=parametro["schema"],
+                                           location=OpenApiParameter.PATH, required=True))
+    entrada = datos.get("requestBody")
+    return {
+        "operation_id": operacion.nombre, "tags": datos["tags"],
+        "request": ({"application/json": expandir_schema(
+            entrada["content"]["application/json"]["schema"], documento)} if entrada else None),
+        "responses": respuestas, "parameters": parametros,
+        "extensions": {"x-estado-implementacion": datos["x-estado-implementacion"]},
     }
 
 

@@ -1,4 +1,13 @@
 from drf_spectacular.extensions import OpenApiAuthenticationExtension
+from drf_spectacular.openapi import AutoSchema
+
+
+class EsquemaAlmacenamiento(AutoSchema):
+    def _get_request_for_media_type(self, serializer, direction="request"):
+        schema, obligatorio = super()._get_request_for_media_type(serializer, direction)
+        if isinstance(serializer, dict):
+            obligatorio = bool(schema.get("required"))
+        return schema, obligatorio
 
 
 class CloudVaultBearerScheme(OpenApiAuthenticationExtension):
