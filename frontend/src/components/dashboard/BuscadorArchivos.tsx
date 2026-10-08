@@ -4,6 +4,7 @@ import type { RangoFecha, RangoTamano } from '../../utils/filtrosArchivos'
 import type { TipoArchivo } from '../../types/archivo'
 
 type FiltroTipo = TipoArchivo | 'todos'
+type NombreMenu = 'tipo' | 'fecha' | 'tamano'
 
 interface BuscadorArchivosProps {
   valorBusqueda: string
@@ -40,6 +41,100 @@ const OPCIONES_TAMANO: { valor: RangoTamano; etiqueta: string }[] = [
   { valor: 'grande', etiqueta: 'Más de 100 MB' },
 ]
 
+interface FiltroDropdownProps<T extends string> {
+  etiquetaBase: string
+  opciones: { valor: T; etiqueta: string }[]
+  valorActual: T
+  estaAbierto: boolean
+  onAlternar: () => void
+  onCerrar: () => void
+  onCambiar: (valor: T) => void
+}
+
+function FiltroDropdown<T extends string>({
+  etiquetaBase,
+  opciones,
+  valorActual,
+  estaAbierto,
+  onAlternar,
+  onCerrar,
+  onCambiar,
+}: FiltroDropdownProps<T>) {
+  const opcionActual = opciones.find((opcion) => opcion.valor === valorActual)
+  const hayFiltroActivo = valorActual !== opciones[0].valor
+
+  return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        type="button"
+        onClick={onAlternar}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
+          padding: '9px 13px',
+          background: hayFiltroActivo ? '#EFF6FF' : '#fff',
+          border: `1.5px solid ${hayFiltroActivo ? '#BFDBFE' : '#E2E8F0'}`,
+          borderRadius: 14,
+          fontSize: 13,
+          fontWeight: 500,
+          color: hayFiltroActivo ? '#2563EB' : '#374151',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {hayFiltroActivo ? opcionActual?.etiqueta : etiquetaBase}
+        <ChevronDown size={13} color={hayFiltroActivo ? '#2563EB' : '#94A3B8'} strokeWidth={2} />
+      </button>
+
+      {estaAbierto && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            left: 0,
+            background: '#fff',
+            border: '1px solid #E2E8F0',
+            borderRadius: 12,
+            boxShadow: '0 4px 16px rgba(15,23,42,0.10)',
+            zIndex: 60,
+            minWidth: 190,
+            overflow: 'hidden',
+          }}
+        >
+          {opciones.map((opcion) => (
+            <button
+              key={opcion.valor}
+              type="button"
+              onClick={() => {
+                onCambiar(opcion.valor)
+                onCerrar()
+              }}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                padding: '10px 14px',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: 13,
+                color: '#374151',
+                textAlign: 'left',
+              }}
+            >
+              {opcion.etiqueta}
+              {opcion.valor === valorActual && <Check size={14} color="#2563EB" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function BuscadorArchivos({
   valorBusqueda,
   onCambiarBusqueda,
@@ -51,95 +146,10 @@ function BuscadorArchivos({
   onCambiarFiltroTamano,
 }: BuscadorArchivosProps) {
   const [enfocado, setEnfocado] = useState(false)
-  const [menuAbierto, setMenuAbierto] = useState<'tipo' | 'fecha' | 'tamano' | null>(null)
+  const [menuAbierto, setMenuAbierto] = useState<NombreMenu | null>(null)
 
-  function FiltroDropdown<T extends string>({
-    etiquetaBase,
-    nombreMenu,
-    opciones,
-    valorActual,
-    onCambiar,
-  }: {
-    etiquetaBase: string
-    nombreMenu: 'tipo' | 'fecha' | 'tamano'
-    opciones: { valor: T; etiqueta: string }[]
-    valorActual: T
-    onCambiar: (valor: T) => void
-  }) {
-    const estaAbierto = menuAbierto === nombreMenu
-    const opcionActual = opciones.find((o) => o.valor === valorActual)
-    const hayFiltroActivo = valorActual !== opciones[0].valor
-
-    return (
-      <div style={{ position: 'relative', flexShrink: 0 }}>
-        <button
-          type="button"
-          onClick={() => setMenuAbierto(estaAbierto ? null : nombreMenu)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 5,
-            padding: '9px 13px',
-            background: hayFiltroActivo ? '#EFF6FF' : '#fff',
-            border: `1.5px solid ${hayFiltroActivo ? '#BFDBFE' : '#E2E8F0'}`,
-            borderRadius: 14,
-            fontSize: 13,
-            fontWeight: 500,
-            color: hayFiltroActivo ? '#2563EB' : '#374151',
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {hayFiltroActivo ? opcionActual?.etiqueta : etiquetaBase}
-          <ChevronDown size={13} color={hayFiltroActivo ? '#2563EB' : '#94A3B8'} strokeWidth={2} />
-        </button>
-
-        {estaAbierto && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 'calc(100% + 4px)',
-              left: 0,
-              background: '#fff',
-              border: '1px solid #E2E8F0',
-              borderRadius: 12,
-              boxShadow: '0 4px 16px rgba(15,23,42,0.10)',
-              zIndex: 60,
-              minWidth: 190,
-              overflow: 'hidden',
-            }}
-          >
-            {opciones.map((opcion) => (
-              <button
-                key={opcion.valor}
-                type="button"
-                onClick={() => {
-                  onCambiar(opcion.valor)
-                  setMenuAbierto(null)
-                }}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 8,
-                  padding: '10px 14px',
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  color: '#374151',
-                  textAlign: 'left',
-                }}
-              >
-                {opcion.etiqueta}
-                {opcion.valor === valorActual && <Check size={14} color="#2563EB" />}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    )
+  function alternarMenu(nombreMenu: NombreMenu) {
+    setMenuAbierto((actual) => (actual === nombreMenu ? null : nombreMenu))
   }
 
   return (
@@ -179,21 +189,27 @@ function BuscadorArchivos({
 
       <FiltroDropdown
         etiquetaBase="Tipo"
-        nombreMenu="tipo"
+        estaAbierto={menuAbierto === 'tipo'}
+        onAlternar={() => alternarMenu('tipo')}
+        onCerrar={() => setMenuAbierto(null)}
         opciones={OPCIONES_TIPO}
         valorActual={filtroTipo}
         onCambiar={onCambiarFiltroTipo}
       />
       <FiltroDropdown
         etiquetaBase="Fecha"
-        nombreMenu="fecha"
+        estaAbierto={menuAbierto === 'fecha'}
+        onAlternar={() => alternarMenu('fecha')}
+        onCerrar={() => setMenuAbierto(null)}
         opciones={OPCIONES_FECHA}
         valorActual={filtroFecha}
         onCambiar={onCambiarFiltroFecha}
       />
       <FiltroDropdown
         etiquetaBase="Tamaño"
-        nombreMenu="tamano"
+        estaAbierto={menuAbierto === 'tamano'}
+        onAlternar={() => alternarMenu('tamano')}
+        onCerrar={() => setMenuAbierto(null)}
         opciones={OPCIONES_TAMANO}
         valorActual={filtroTamano}
         onCambiar={onCambiarFiltroTamano}

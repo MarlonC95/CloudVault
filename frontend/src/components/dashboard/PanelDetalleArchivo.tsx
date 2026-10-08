@@ -1,4 +1,4 @@
-import { Download, Users, Trash2, Shield, AlertTriangle, HardDrive, FileText, Clock, User } from 'lucide-react'
+import { Download, Users, Trash2, Shield, AlertTriangle, HardDrive, FileText, Clock, User, FolderInput } from 'lucide-react'
 import { obtenerConfiguracionTipoArchivo } from '../../utils/tiposArchivo'
 import type { Archivo } from '../../types/archivo'
 
@@ -7,9 +7,10 @@ interface PanelDetalleArchivoProps {
   onDescargar: (archivo: Archivo) => void
   onCompartir: (archivo: Archivo) => void
   onEliminar: (archivo: Archivo) => void
+  onMover: (archivo: Archivo) => void
 }
 
-function PanelDetalleArchivo({ archivo, onDescargar, onCompartir, onEliminar }: PanelDetalleArchivoProps) {
+function PanelDetalleArchivo({ archivo, onDescargar, onCompartir, onEliminar, onMover }: PanelDetalleArchivoProps) {
   if (!archivo) return null
 
   const configuracion = obtenerConfiguracionTipoArchivo(archivo.tipo)
@@ -136,6 +137,28 @@ function PanelDetalleArchivo({ archivo, onDescargar, onCompartir, onEliminar }: 
           >
             <Users size={13} strokeWidth={1.9} />
             Compartir
+          </button>
+          <button
+            type="button"
+            onClick={() => onMover(archivo)}
+            style={{
+              width: '100%',
+              background: '#F8FAFC',
+              color: '#374151',
+              border: '1px solid #E2E8F0',
+              borderRadius: 8,
+              padding: '8px 0',
+              fontWeight: 500,
+              fontSize: 13,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+            }}
+          >
+            <FolderInput size={13} strokeWidth={1.9} />
+            Mover a carpeta
           </button>
           <button
             type="button"

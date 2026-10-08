@@ -13,8 +13,8 @@ function ModalCompartir({ archivo, onCerrar }: ModalCompartirProps) {
 
   if (!archivo) return null
 
-  // TODO(backend): reemplazar por la llamada real a POST /api/enlaces-publicos/
-  const enlaceSimulado = `https://cloudvault.app/compartido/${archivo.id}-${Math.random().toString(36).slice(2, 8)}`
+  // TODO(backend): reemplazar por la llamada real a POST /api/v1/enlaces-compartidos/ (ver enlacesService.ts)
+  const enlaceSimulado = `https://cloudvault.app/compartido/${archivo.id}`
 
   async function copiarEnlace() {
     try {
