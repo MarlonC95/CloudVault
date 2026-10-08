@@ -11,11 +11,10 @@ from unittest.mock import patch
 from urllib.parse import unquote, urlsplit
 
 from django.db import connection
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 from jsonschema import Draft4Validator, FormatChecker
 from rest_framework.test import APIClient
 
-from almacenamiento.adaptadores import ServiciosCompartidosValidados
 from almacenamiento.cliente_integracion import CONTENIDO, FalloIntegracion, RespuestaHTTP, recorrer
 from almacenamiento.models import IntentoPublicacion, SesionCarga
 from almacenamiento.openapi import crear_openapi
@@ -42,12 +41,8 @@ class ClienteEntregaPersistenteTests(SimpleTestCase):
         self.exponer_etag = True
         self.fallar_confirmacion = False
         self.corromper_get = False
-        for parche in (
-            patch("almacenamiento.views.servicios_compartidos", side_effect=lambda: ServiciosCompartidosValidados(self.proveedor)),
-            patch("almacenamiento.views.verificador_publicacion", return_value=self.bucket.verificar),
-        ):
-            parche.start()
-            self.addCleanup(parche.stop)
+        self.enterContext(override_settings(ALMACENAMIENTO_SERVICIOS_FACTORY=lambda: self.proveedor))
+        self.enterContext(patch("almacenamiento.views.verificador_publicacion", return_value=self.bucket.verificar))
 
     def solicitar(self, metodo, url, *, headers, body=None):
         parsed = urlsplit(url)
@@ -112,6 +107,41 @@ class ClienteEntregaPersistenteTests(SimpleTestCase):
         self.assertTrue(self.recorrer()["aprobado"])
         self.assertEqual(self.bucket.copias, 1)
 
+    def test_cambio_estable_de_nombre_y_carpeta_conserva_descarga_identidad_y_uso(self):
+        informe = self.recorrer()
+        archivo = informe["archivo_id"]
+        with connection.cursor() as cursor:
+            original = cursor.execute("SELECT clave_s3,checksum_sha256 FROM archivos WHERE id=%s",
+                                      [archivo]).fetchone()
+            cursor.execute("UPDATE archivos SET nombre_original=%s,carpeta_id=NULL WHERE id=%s",
+                           ["informe actualizado.txt", archivo])
+        with patch("almacenamiento.views.cliente_firmador", return_value=self.bucket):
+            respuesta = self.client.get(f"/api/v1/archivos/{archivo}/descarga/")
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.data["data"]["nombre"], "informe actualizado.txt")
+        self.assertEqual(SesionCarga.objects.get().archivo_id, self.proveedor.autorizar_descarga(
+            solicitante_id=self.proveedor.actores[0], archivo_id=archivo).archivo_id)
+        with connection.cursor() as cursor:
+            self.assertEqual(cursor.execute("SELECT clave_s3,checksum_sha256 FROM archivos WHERE id=%s",
+                                            [archivo]).fetchone(), original)
+            self.assertEqual(cursor.execute("SELECT almacenamiento_usado_bytes FROM organizaciones WHERE id=%s",
+                                            [self.proveedor.organizaciones[0]]).fetchone(), (len(CONTENIDO),))
+        self.assertEqual(self.bucket.copias, 1)
+        self.assertEqual(self.bucket.borrados, [])
+
+    def test_tamano_metadato_distinto_de_publicacion_no_emite_descarga(self):
+        archivo = self.recorrer()["archivo_id"]
+        with connection.cursor() as cursor:
+            cursor.execute("UPDATE archivos SET tamano_bytes=0 WHERE id=%s", [archivo])
+        with patch("almacenamiento.views.cliente_firmador") as cliente:
+            respuesta = self.client.get(f"/api/v1/archivos/{archivo}/descarga/")
+        # Inconsistencia durable: ERROR_INTERNO del contrato existente, sin
+        # emitir capability. No confundirla con un timeout remoto transitorio.
+        self.assertEqual(respuesta.status_code, 500)
+        self.assertEqual(respuesta.data["error"]["code"], "ERROR_INTERNO")
+        self.assertNotIn("url_descarga", str(respuesta.data))
+        cliente.assert_not_called()
+
     def test_confirmacion_falla_conserva_id_sin_reinicio_ni_delete(self):
         self.fallar_confirmacion = True
         with self.assertRaises(FalloIntegracion) as exc:
@@ -129,4 +159,3 @@ class ClienteEntregaPersistenteTests(SimpleTestCase):
             self.recorrer()
         self.assertEqual(exc.exception.codigo, "CONTENIDO_NO_VERIFICADO")
         self.assertFalse(exc.exception.informe()["aprobado"])
-

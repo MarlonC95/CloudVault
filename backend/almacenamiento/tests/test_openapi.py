@@ -114,7 +114,7 @@ class OpenAPIContratoTests(SimpleTestCase):
         self.assertFalse(self.validar_ejemplo("ConfirmarCargaSuccess", body))
 
     def test_documento_exportado_coincide_con_generador(self):
-        file = Path(__file__).resolve().parents[3] / "agente" / "contrato-fase-01.openapi.json"
+        file = Path(__file__).resolve().parents[1] / "entrega" / "openapi.json"
         self.assertEqual(json.loads(file.read_text()), self.documento)
 
     def test_router_y_swagger_publican_las_tres_rutas_instaladas(self):

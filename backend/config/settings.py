@@ -46,6 +46,9 @@ CORS_URLS_REGEX = r"^/api/"
 CORS_ALLOW_CREDENTIALS = False
 
 ROOT_URLCONF = "config.urls"
+# Solo habilitar después de integrar apps/modelos de negocio compatibles.
+# El orden dentro de config.urls mantiene la carga antes del router general.
+ALMACENAMIENTO_URLCONFS_NEGOCIO = env.list("ALMACENAMIENTO_URLCONFS_NEGOCIO", default=[])
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",

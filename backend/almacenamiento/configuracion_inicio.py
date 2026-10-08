@@ -3,9 +3,7 @@
 import os
 
 from django.conf import settings
-from django.utils.module_loading import import_string
-
-from .adaptadores import ServiciosCompartidosValidados
+from .conexion_negocio import crear_servicios_almacenamiento
 from .configuracion_s3 import ConfiguracionS3, ConfiguracionS3Invalida
 from .contrato import CodigoError, PoliticaCarga
 from .errores import ErrorCarga
@@ -36,15 +34,7 @@ def politica_inicio():
 
 
 def servicios_compartidos():
-    fabrica = getattr(settings, "ALMACENAMIENTO_SERVICIOS_FACTORY",
-                       os.environ.get("ALMACENAMIENTO_SERVICIOS_FACTORY", ""))
-    if not fabrica:
-        raise ErrorCarga(CodigoError.SERVICE_UNAVAILABLE)
-    try:
-        proveedor = import_string(fabrica)() if isinstance(fabrica, str) else fabrica()
-        return ServiciosCompartidosValidados(proveedor)
-    except (ImportError, TypeError, ValueError, AttributeError):
-        raise ErrorCarga(CodigoError.SERVICE_UNAVAILABLE) from None
+    return crear_servicios_almacenamiento()
 
 
 def cliente_firmador():
