@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ChevronLeft, Folder as FolderIcon } from 'lucide-react'
-import { CARPETAS_EJEMPLO, ARCHIVOS_EJEMPLO, CARGAS_EJEMPLO } from '../data/datosEjemplo'
+import { CARGAS_EJEMPLO } from '../data/datosEjemplo'
+import { useArchivos } from '../context/archivosContexto'
 import { cumpleRangoFecha, cumpleRangoTamano } from '../utils/filtrosArchivos'
 import { obtenerTipoArchivoPorNombre, formatearTamanoBytes } from '../utils/formatoArchivo'
 import { obtenerSesion } from '../services/authService'
 import type { RangoFecha, RangoTamano } from '../utils/filtrosArchivos'
-import type { Archivo, Carpeta, TipoArchivo } from '../types/archivo'
+import type { Archivo, TipoArchivo } from '../types/archivo'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import BuscadorArchivos from '../components/dashboard/BuscadorArchivos'
 import TarjetaCarpeta from '../components/dashboard/TarjetaCarpeta'
@@ -20,15 +22,18 @@ import ModalMoverArchivo from '../components/dashboard/ModalMoverArchivo'
 
 type FiltroTipo = TipoArchivo | 'todos'
 
-const COLORES_CARPETA_NUEVA = [
-  { color: '#DB2777', colorFondo: '#FDF2F8' },
-  { color: '#CA8A04', colorFondo: '#FEFCE8' },
-  { color: '#059669', colorFondo: '#ECFDF5' },
-]
+interface EstadoNavegacionDashboard {
+  abrirSubida?: boolean
+}
 
 function DashboardPage() {
-  const [carpetas, setCarpetas] = useState<Carpeta[]>(CARPETAS_EJEMPLO)
-  const [archivos, setArchivos] = useState<Archivo[]>(ARCHIVOS_EJEMPLO)
+  const navegar = useNavigate()
+  const ubicacion = useLocation()
+  const { carpetas, archivos, agregarArchivos, crearCarpeta, moverArchivo, enviarAPapelera } = useArchivos()
+
+  // El botón "Subir Archivo" del menú, desde otras pantallas, nos trae aquí con la ventana de subida pedida.
+  const debeAbrirSubida = (ubicacion.state as EstadoNavegacionDashboard | null)?.abrirSubida === true
+
   const [carpetaActivaId, setCarpetaActivaId] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
@@ -37,11 +42,18 @@ function DashboardPage() {
   const [archivoSeleccionado, setArchivoSeleccionado] = useState<Archivo | null>(null)
   const [archivoParaCompartir, setArchivoParaCompartir] = useState<Archivo | null>(null)
   const [archivoParaMover, setArchivoParaMover] = useState<Archivo | null>(null)
-  const [mostrarModalSubida, setMostrarModalSubida] = useState(false)
+  const [mostrarModalSubida, setMostrarModalSubida] = useState(debeAbrirSubida)
   const [mostrarModalNuevaCarpeta, setMostrarModalNuevaCarpeta] = useState(false)
   const [cargas] = useState(CARGAS_EJEMPLO)
 
   const usuario = obtenerSesion()?.usuario
+
+  useEffect(() => {
+    // Limpiamos el aviso para que la ventana no se reabra al recargar o volver atrás
+    if (debeAbrirSubida) {
+      navegar(ubicacion.pathname, { replace: true, state: null })
+    }
+  }, [debeAbrirSubida, navegar, ubicacion.pathname])
 
   function contarArchivosDeCarpeta(carpetaId: string) {
     return archivos.filter((archivo) => archivo.carpetaId === carpetaId && !archivo.enPapelera).length
@@ -70,29 +82,19 @@ function DashboardPage() {
   }
 
   function manejarEliminar(archivo: Archivo) {
-    setArchivos((anteriores) => anteriores.map((a) => (a.id === archivo.id ? { ...a, enPapelera: true } : a)))
+    enviarAPapelera(archivo.id)
     if (archivoSeleccionado?.id === archivo.id) {
       setArchivoSeleccionado(null)
     }
   }
 
   function manejarMover(archivo: Archivo, nuevaCarpetaId: string | null) {
-    setArchivos((anteriores) =>
-      anteriores.map((a) => (a.id === archivo.id ? { ...a, carpetaId: nuevaCarpetaId } : a))
-    )
+    moverArchivo(archivo.id, nuevaCarpetaId)
     setArchivoParaMover(null)
   }
 
   function manejarCrearCarpeta(nombre: string) {
-    const paleta = COLORES_CARPETA_NUEVA[carpetas.length % COLORES_CARPETA_NUEVA.length]
-    const nuevaCarpeta: Carpeta = {
-      id: `carpeta-${Date.now()}`,
-      nombre,
-      color: paleta.color,
-      colorFondo: paleta.colorFondo,
-    }
-    // TODO(backend): reemplazar por POST /api/carpetas/
-    setCarpetas((anteriores) => [...anteriores, nuevaCarpeta])
+    crearCarpeta(nombre)
     setMostrarModalNuevaCarpeta(false)
   }
 
@@ -111,7 +113,7 @@ function DashboardPage() {
       enPapelera: false,
     }))
 
-    setArchivos((anteriores) => [...nuevosArchivos, ...anteriores])
+    agregarArchivos(nuevosArchivos)
     setMostrarModalSubida(false)
   }
 

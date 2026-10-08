@@ -10,6 +10,8 @@ export interface Archivo {
   cifrado: boolean
   esNuevo?: boolean
   enPapelera?: boolean
+  /** Fecha ISO (UTC) en la que el archivo pasó a la papelera. Solo existe si enPapelera es true. */
+  eliminadoEn?: string
   carpetaId: string | null
 }
 

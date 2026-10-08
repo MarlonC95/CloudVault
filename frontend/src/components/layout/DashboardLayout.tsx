@@ -91,10 +91,12 @@ function DashboardLayout({ seccionActiva, onClickSubirArchivo, children }: Dashb
           className="btn w-100 d-flex justify-content-center align-items-center gap-2 text-white fw-semibold mb-4"
           style={{ backgroundColor: COLOR_MARCA, borderRadius: '10px', padding: '10px' }}
           onClick={() => {
-            if (seccionActiva === undefined) {
-              navegar('/dashboard')
+            if (onClickSubirArchivo) {
+              onClickSubirArchivo()
+              return
             }
-            onClickSubirArchivo?.()
+            // Desde otras pantallas (Papelera, Planes, Perfil…) llevamos al usuario a Mi Unidad con la subida abierta
+            navegar('/dashboard', { state: { abrirSubida: true } })
           }}
         >
           <Upload size={18} />
