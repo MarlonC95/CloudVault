@@ -2,6 +2,7 @@
 
 import json
 import time
+from datetime import datetime, timezone
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -34,16 +35,28 @@ class Command(BaseCommand):
         try:
             while True:
                 inicio = time.monotonic()
+                fecha = datetime.now(timezone.utc).isoformat()
+                fallo = False
                 try:
                     informe = servicio.ejecutar()
                 except Exception:
                     # No serializar mensajes SQL/SDK, claves ni credenciales.
                     informe = {"error": "SERVICE_UNAVAILABLE"}
-                    if not options["continuo"]:
-                        raise CommandError("Mantenimiento no disponible; revisar dependencias.") from None
-                self.stdout.write(json.dumps({"ciclo": ejecutados + 1, "intervalo_segundos": intervalo,
+                    fallo = True
+                incidencias = {"SQL", "S3", "DEPENDENCIA", "INTEGRIDAD", "ERROR",
+                               "COPY_AMBIGUO", "RECUPERACION"}
+                nivel = ("error" if fallo else "warn" if incidencias.intersection(
+                    informe.get("resultados", {})) else "info")
+                self.stdout.write(json.dumps({"evento": "mantenimiento_ciclo", "level": nivel,
+                                              "message": "Mantenimiento no disponible." if fallo else
+                                                         "Ciclo de mantenimiento completado.",
+                                              "fecha_utc": fecha,
+                                              "duracion_segundos": round(time.monotonic() - inicio, 3),
+                                              "ciclo": ejecutados + 1, "intervalo_segundos": intervalo,
                                               **informe}, ensure_ascii=False))
                 self.stdout.flush()
+                if fallo and not options["continuo"]:
+                    raise CommandError("Mantenimiento no disponible; revisar dependencias.") from None
                 ejecutados += 1
                 if not options["continuo"] or (ciclos is not None and ejecutados >= ciclos):
                     break

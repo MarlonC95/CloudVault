@@ -1,4 +1,6 @@
 from io import StringIO
+import json
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -38,6 +40,32 @@ class MantenimientoSinDBTests(SimpleTestCase):
                    return_value=servicio), self.assertRaises(CommandError) as error:
             call_command("mantener_cargas")
         self.assertNotIn("secret", str(error.exception))
+
+    def test_registro_de_ciclo_tiene_fecha_duracion_y_nivel_de_incidencia(self):
+        salida = StringIO()
+        servicio = SimpleNamespace(ejecutar=Mock(return_value={
+            "procesados": 1, "resultados": {"INTEGRIDAD": 1}, "metricas": {}}))
+        with patch("almacenamiento.management.commands.mantener_cargas.crear_servicio_mantenimiento",
+                   return_value=servicio), patch(
+                       "almacenamiento.management.commands.mantener_cargas.time.monotonic",
+                       side_effect=[10, 12.5]):
+            call_command("mantener_cargas", stdout=salida)
+        registro = json.loads(salida.getvalue())
+        self.assertIsNotNone(datetime.fromisoformat(registro["fecha_utc"]).tzinfo)
+        self.assertEqual(registro["duracion_segundos"], 2.5)
+        self.assertEqual(registro["level"], "warn")
+        self.assertEqual(registro["evento"], "mantenimiento_ciclo")
+
+    def test_fallo_de_ciclo_unico_registra_error_antes_de_salir(self):
+        salida = StringIO()
+        servicio = SimpleNamespace(ejecutar=Mock(side_effect=RuntimeError("synthetic-private-secret")))
+        with patch("almacenamiento.management.commands.mantener_cargas.crear_servicio_mantenimiento",
+                   return_value=servicio), self.assertRaises(CommandError):
+            call_command("mantener_cargas", stdout=salida)
+        registro = json.loads(salida.getvalue())
+        self.assertEqual(registro["level"], "error")
+        self.assertEqual(registro["error"], "SERVICE_UNAVAILABLE")
+        self.assertNotIn("secret", salida.getvalue())
 
     def test_parametros_invalidos_no_inician_servicio(self):
         with patch("almacenamiento.management.commands.mantener_cargas.crear_servicio_mantenimiento") as fabrica:
