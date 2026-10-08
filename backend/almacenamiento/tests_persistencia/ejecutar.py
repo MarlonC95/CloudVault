@@ -17,6 +17,7 @@ from uuid import uuid4
 import psycopg
 
 from .aceptacion import crear_informe, guardar_informe, metadatos
+from .esquema_externo import cargar_esquema, verificar_diario, REFERENCIA_PREDETERMINADA, RUTA_PREDETERMINADA
 
 
 def main():
@@ -32,7 +33,21 @@ def main():
     parser.add_argument("--perfil-auth-desplegado", action="store_true",
                         help="Regresión auth separada, en variante de fecha observada en la DB real")
     parser.add_argument("--evidencia-entorno-real", type=Path)
+    fuente = parser.add_mutually_exclusive_group()
+    fuente.add_argument("--esquema", type=Path,
+                        help="Esquema completo externo del responsable SQL, solo para la DB privada")
+    fuente.add_argument("--esquema-ref", default=REFERENCIA_PREDETERMINADA,
+                        help="Referencia Git de lectura del esquema; nunca cambia ni fusiona ramas")
+    parser.add_argument("--esquema-ruta", default=RUTA_PREDETERMINADA,
+                        help="Ruta del esquema dentro de la referencia Git")
     args = parser.parse_args()
+    backend = Path(__file__).resolve().parents[2]
+    repo = backend.parent
+    try:
+        esquema, fuente_esquema = cargar_esquema(repo, archivo=args.esquema,
+            referencia=args.esquema_ref, ruta=args.esquema_ruta)
+    except ValueError as error:
+        parser.error(str(error))
     if args.perfil_auth_desplegado:
         if not args.evidencia_entorno_real:
             parser.error("El perfil auth exige evidencia de lectura del esquema real")
@@ -44,9 +59,8 @@ def main():
     ejecutables = {nombre: shutil.which(nombre) for nombre in ("initdb", "pg_ctl")}
     if not all(ejecutables.values()):
         raise RuntimeError("Se necesitan initdb y pg_ctl de PostgreSQL local")
-    backend = Path(__file__).resolve().parents[2]
-    repo = backend.parent
     contexto = metadatos(repo)
+    contexto["esquema_pruebas"] = fuente_esquema
     resultados = []
     salida = 1
     temporal_eliminado = False
@@ -76,8 +90,8 @@ def main():
                 conn.execute("CREATE DATABASE test_cloudvault_fase2")
             with psycopg.connect(dbname="test_cloudvault_fase2", **parametros) as conn:
                 conn.execute((Path(__file__).with_name("prerrequisitos.sql")).read_text())
-                conn.execute((repo / "agente/referencias/esquema-vigente.sql").read_text())
-                conn.execute((backend / "almacenamiento/sql/mantenimiento.sql").read_text())
+                conn.execute(esquema)
+                verificar_diario(conn)
                 if args.perfil_auth_desplegado:
                     # Variante de fixture observada en DB real, nunca un alias
                     # para aprobar la suite literal: esta ejecución es distinta.

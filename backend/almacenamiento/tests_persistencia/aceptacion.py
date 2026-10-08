@@ -114,13 +114,16 @@ def metadatos(repo):
     repo = Path(repo)
     archivos = list((repo / "backend/almacenamiento").rglob("*.py"))
     archivos += list((repo / "backend/almacenamiento/sql").glob("*.sql"))
-    archivos += [repo / "agente/referencias/esquema-vigente.sql", repo / "agente/referencias/contrato-api-vigente.pdf"]
+    referencias = [repo / "agente/referencias/esquema-vigente.sql", repo / "agente/referencias/contrato-api-vigente.pdf"]
+    # Los documentos personales no son dependencias del ejecutor funcional.
+    archivos += [p for p in referencias if p.is_file()]
     hashes = {str(p.relative_to(repo)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(archivos)}
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, env={"GIT_OPTIONAL_LOCKS": "0"},
                             check=True, capture_output=True, text=True).stdout.strip()
     return {"fecha_utc": datetime.now(timezone.utc).isoformat(), "commit_base": commit,
             "codigo": "Archivos de trabajo identificados por SHA256; no se efectuó commit.",
-            "hashes": hashes, "python": platform.python_version(), "django": django.get_version(),
+            "hashes": hashes, "referencias_locales_ausentes": [str(p.relative_to(repo)) for p in referencias if not p.is_file()],
+            "python": platform.python_version(), "django": django.get_version(),
             "proveedor": "S3/negocio sintéticos; firmas SDK offline; HTTP local de ensayo",
             "base": "PostgreSQL privado en socket Unix, sin TCP/.env/DB compartida"}
 
