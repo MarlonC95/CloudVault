@@ -45,6 +45,9 @@ class EntornoRealTests(SimpleTestCase):
         self.assertTrue(all(c.args[0].lstrip().startswith(("SELECT", "SHOW")) for c in conn.execute.call_args_list))
         self.assertTrue(informe["env_sin_cambios"])
         self.assertNotIn("synthetic-private", json.dumps(informe))
+        consultas = [c.args[0] for c in conn.execute.call_args_list]
+        self.assertIn("SELECT to_regclass('public.trabajos_mantenimiento') IS NOT NULL", consultas)
+        self.assertFalse(any("almacenamiento_tecnico" in consulta for consulta in consultas))
 
     def test_fallo_privado_no_se_escribe_en_informe(self):
         estado, informe, _ = self.ejecutar(Mock(side_effect=psycopg.OperationalError("synthetic-private-password")))

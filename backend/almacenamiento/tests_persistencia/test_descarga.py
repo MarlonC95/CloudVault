@@ -190,6 +190,52 @@ class DescargaPersistenteTests(SimpleTestCase):
         self.descargar(self.servicio(limite=1))
         self.assertEqual(self.eventos().count(), 2)
 
+    def test_purga_eventos_antiguos_conserva_limite_activo(self):
+        # Solo fixture privado; no instala un limpiador en la base compartida.
+        self.descargar(self.servicio(limite=1))
+        vigente = self.eventos().get()
+        antiguo = LogAuditoria.objects.create(
+            usuario_id=self.actor, organizacion_id=self.org, accion=ACCION_DESCARGA,
+            fecha_evento=timezone.now()-timedelta(minutes=10),
+            detalles={"archivo_id": str(self.archivo.archivo_id)})
+        with self.assertRaises(Throttled):
+            self.descargar(self.servicio(limite=1))
+        corte = timezone.now()-timedelta(seconds=300)
+        borrados, _ = self.eventos().filter(fecha_evento__lt=corte).delete()
+        self.assertEqual(borrados, 1)
+        self.assertFalse(LogAuditoria.objects.filter(pk=antiguo.pk).exists())
+        self.assertEqual(self.eventos().get().pk, vigente.pk)
+        with self.assertRaises(Throttled) as error:
+            self.descargar(self.servicio(limite=1))
+        self.assertGreater(error.exception.wait, 0)
+        self.clientes_descarga[-1].firmar_descarga.assert_not_called()
+        self.assertEqual(self.eventos().count(), 1)
+        self.assertEqual(self.cuota(organizacion_id=self.org).usado_bytes, 85)
+
+    def test_purga_estricta_respeta_borde_de_ventana_mayor_a_300(self):
+        ventana = 600
+        self.descargar(self.servicio(limite=1, ventana_segundos=ventana))
+        vigente = self.eventos().get()
+        ahora = timezone.now()
+        corte = ahora-timedelta(seconds=ventana)
+        # El limitador usa >=: el evento exactamente en el corte sigue activo.
+        self.eventos().filter(pk=vigente.pk).update(fecha_evento=corte)
+        antiguo = LogAuditoria.objects.create(
+            usuario_id=self.actor, organizacion_id=self.org, accion=ACCION_DESCARGA,
+            fecha_evento=corte-timedelta(microseconds=1),
+            detalles={"archivo_id": str(self.archivo.archivo_id)})
+        with patch("almacenamiento.descarga.timezone.now", return_value=ahora):
+            with self.assertRaises(Throttled):
+                self.descargar(self.servicio(limite=1, ventana_segundos=ventana))
+            borrados, _ = self.eventos().filter(fecha_evento__lt=corte).delete()
+            self.assertEqual(borrados, 1)
+            self.assertFalse(LogAuditoria.objects.filter(pk=antiguo.pk).exists())
+            self.assertEqual(self.eventos().get().pk, vigente.pk)
+            with self.assertRaises(Throttled):
+                self.descargar(self.servicio(limite=1, ventana_segundos=ventana))
+        self.clientes_descarga[-1].firmar_descarga.assert_not_called()
+        self.assertEqual(self.eventos().count(), 1)
+
     def test_dos_conexiones_comparten_limite_una_firma_y_un_429(self):
         barrera = Barrier(2)
         def descargar():

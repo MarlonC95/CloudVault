@@ -79,27 +79,95 @@ class CorsTests(SimpleTestCase):
             self.assertTrue(aplicar_cors.ejecutar(cliente, [ORIGEN_ENSAYO], aplicar=True)["aprobado"])
         cliente._cliente.delete_bucket_cors.assert_not_called()
 
-    def test_put_200_sin_reglas_ni_cors_no_es_exito(self):
+    def test_lectura_previa_no_verificable_rechaza_escritura(self):
         cliente = Mock()
         cliente._cliente.get_bucket_cors.return_value = {}
-        with patch.object(aplicar_cors, "guardar_respaldo", return_value="/tmp/respaldo"), \
-             patch.object(aplicar_cors, "comprobar_options", return_value=[{"aprobado": False}]):
+        with patch.object(aplicar_cors, "guardar_respaldo") as respaldo, \
+             patch.object(aplicar_cors, "comprobar_options") as options:
             informe = aplicar_cors.ejecutar(cliente, [ORIGEN_ENSAYO], aplicar=True)
-        self.assertTrue(informe["operacion_put_cors_respondio"])
+        self.assertEqual(informe["lectura_previa"], "no_verificable")
+        self.assertEqual(informe["lectura_final"], "no_verificable")
+        self.assertEqual(informe["error"], "lectura_previa_no_verificable")
+        self.assertEqual(informe["preflight"], [])
+        self.assertNotIn("operacion_put_cors_respondio", informe)
+        self.assertNotIn("respaldo", informe)
         self.assertFalse(informe["regla_verificada"])
         self.assertFalse(informe["aprobado"])
+        respaldo.assert_not_called()
+        options.assert_not_called()
+        cliente._cliente.get_bucket_cors.assert_called_once()
+        cliente._cliente.put_bucket_cors.assert_not_called()
+        cliente._cliente.delete_bucket_cors.assert_not_called()
+
+    def test_respuestas_y_reglas_incompletas_no_envian_reemplazo(self):
+        valida = aplicar_cors.politica([ORIGEN_ENSAYO])
+        incompletas = [None, [], "respuesta", {"CORSRules": None},
+                      {"CORSRules": {}}, {"CORSRules": "reglas"}]
+        incompletas += [{"CORSRules": [regla]} for regla in (
+            None, "regla", {}, {"AllowedOrigins": [ORIGEN_ENSAYO]},
+            {**valida, "AllowedMethods": "PUT"},
+            {**valida, "AllowedOrigins": []},
+            {**valida, "AllowedHeaders": None},
+            {**valida, "ExposeHeaders": [None]},
+            {**valida, "ID": 123}, {**valida, "MaxAgeSeconds": True},
+        )]
+        for respuesta in incompletas:
+            with self.subTest(respuesta=respuesta):
+                cliente = Mock()
+                cliente._cliente.get_bucket_cors.return_value = respuesta
+                with patch.object(aplicar_cors, "guardar_respaldo") as respaldo, \
+                        patch.object(aplicar_cors, "comprobar_options") as options:
+                    informe = aplicar_cors.ejecutar(cliente, [ORIGEN_ENSAYO], aplicar=True)
+                self.assertFalse(informe["aprobado"])
+                self.assertEqual(informe["error"], "lectura_previa_no_verificable")
+                respaldo.assert_not_called()
+                options.assert_not_called()
+                cliente._cliente.put_bucket_cors.assert_not_called()
+                cliente._cliente.delete_bucket_cors.assert_not_called()
+
+    def test_ausencia_confirmada_y_lista_vacia_permiten_configurar(self):
+        regla = aplicar_cors.politica([ORIGEN_ENSAYO])
+        ausente = ClientError({"Error": {"Code": "NoSuchCORSConfiguration"}}, "GetBucketCors")
+        for previa, estado in ((ausente, "ausente"), ({"CORSRules": []}, "vacio")):
+            with self.subTest(estado=estado):
+                cliente = Mock()
+                cliente._cliente.get_bucket_cors.side_effect = [previa, {"CORSRules": [regla]}]
+                with patch.object(aplicar_cors, "guardar_respaldo", return_value="/tmp/respaldo") as respaldo, \
+                        patch.object(aplicar_cors, "comprobar_options", return_value=[{"aprobado": True}]):
+                    informe = aplicar_cors.ejecutar(cliente, [ORIGEN_ENSAYO], aplicar=True)
+                self.assertTrue(informe["aprobado"])
+                self.assertEqual(informe["lectura_previa"], estado)
+                respaldo.assert_called_once()
+                cliente._cliente.put_bucket_cors.assert_called_once_with(
+                    Bucket=cliente.configuracion.bucket, CORSConfiguration={"CORSRules": [regla]})
+                cliente._cliente.delete_bucket_cors.assert_not_called()
+
+    def test_lectura_final_incompleta_no_aprueba_ni_revierte_a_ciegas(self):
+        cliente = Mock()
+        cliente._cliente.get_bucket_cors.side_effect = [{"CORSRules": []}, {}]
+        with patch.object(aplicar_cors, "guardar_respaldo", return_value="/tmp/respaldo"), \
+                patch.object(aplicar_cors, "comprobar_options", return_value=[{"aprobado": True}]):
+            informe = aplicar_cors.ejecutar(cliente, [ORIGEN_ENSAYO], aplicar=True)
+        self.assertTrue(informe["operacion_put_cors_respondio"])
+        self.assertEqual(informe["lectura_final"], "no_verificable")
+        self.assertFalse(informe["aprobado"])
+        cliente._cliente.put_bucket_cors.assert_called_once()
         cliente._cliente.delete_bucket_cors.assert_not_called()
 
     def test_consulta_no_escribe(self):
         cliente = Mock()
         cliente._cliente.get_bucket_cors.return_value = {}
-        with patch.object(aplicar_cors, "comprobar_options", return_value=[{"aprobado": False}]):
-            aplicar_cors.ejecutar(cliente, [ORIGEN_ENSAYO])
+        with patch.object(aplicar_cors, "guardar_respaldo") as respaldo, \
+                patch.object(aplicar_cors, "comprobar_options", return_value=[{"aprobado": False}]) as options:
+            informe = aplicar_cors.ejecutar(cliente, [ORIGEN_ENSAYO])
+        options.assert_called_once()
+        respaldo.assert_not_called()
+        self.assertFalse(informe["aprobado"])
         cliente._cliente.put_bucket_cors.assert_not_called()
 
     def test_respaldo_privado_sin_inventar_reversion(self):
-        with tempfile.TemporaryDirectory() as carpeta, \
-             patch.object(aplicar_cors.tempfile, "mkdtemp", return_value=carpeta):
+        carpeta = tempfile.mkdtemp(prefix="cloudvault-cors-test-", dir="/private/tmp")
+        with patch.object(aplicar_cors.tempfile, "mkdtemp", return_value=carpeta):
             anterior = {"estado": "no_verificable", "CORSRules": None}
             aplicar_cors.guardar_respaldo(anterior, {"CORSRules": []})
             p = Path(carpeta)

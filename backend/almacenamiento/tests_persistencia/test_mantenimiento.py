@@ -121,6 +121,20 @@ class MantenimientoPersistenteTests(SimpleTestCase):
     def trabajo(self):
         return TrabajoMantenimiento.objects.get(sesion=self.sesion)
 
+    def test_trigger_actualiza_fecha_y_conserva_ack_en_update_parcial(self):
+        self.assertEqual(self.confirmar()["data"]["id"], str(self.sesion.archivo_id))
+        original = self.trabajo()
+        self.assertTrue(original.copia_concluida)
+        fecha_pasada = timezone.now() - timedelta(days=1)
+        TrabajoMantenimiento.objects.filter(sesion=self.sesion).update(
+            fallos_consecutivos=1, actualizado_en=fecha_pasada)
+        actual = self.trabajo()
+        self.assertGreater(actual.actualizado_en, original.actualizado_en)
+        self.assertGreater(actual.actualizado_en, fecha_pasada)
+        self.assertEqual(actual.fallos_consecutivos, 1)
+        self.assertTrue(actual.copia_concluida)
+        self.assertEqual(actual.estado, original.estado)
+
     def test_cancelar_libera_una_vez_sin_borrar_bajo_url_vigente(self):
         servicio = self.servicio()
         respuesta = servicio.cancelar(solicitante_id=self.actor, archivo_id=self.sesion.archivo_id)

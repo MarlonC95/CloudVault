@@ -42,6 +42,21 @@ def politica(origenes):
             "ExposeHeaders": ["ETag"], "MaxAgeSeconds": 300}
 
 
+def _regla_legible(regla):
+    if not isinstance(regla, dict):
+        return False
+    for campo in ("AllowedOrigins", "AllowedMethods", "AllowedHeaders", "ExposeHeaders"):
+        obligatorio = campo in ("AllowedOrigins", "AllowedMethods")
+        if obligatorio or campo in regla:
+            valores = regla.get(campo)
+            if (not isinstance(valores, list) or (obligatorio and not valores)
+                    or any(not isinstance(valor, str) or not valor for valor in valores)):
+                return False
+    return (("ID" not in regla or isinstance(regla["ID"], str))
+            and ("MaxAgeSeconds" not in regla
+                 or (type(regla["MaxAgeSeconds"]) is int and regla["MaxAgeSeconds"] >= 0)))
+
+
 def consultar_cors(cliente):
     try:
         respuesta = cliente._cliente.get_bucket_cors(Bucket=cliente.configuracion.bucket)
@@ -49,8 +64,8 @@ def consultar_cors(cliente):
         if exc.response.get("Error", {}).get("Code") == "NoSuchCORSConfiguration":
             return {"estado": "ausente", "CORSRules": []}
         raise
-    reglas = respuesta.get("CORSRules")
-    if not isinstance(reglas, list):
+    reglas = respuesta.get("CORSRules") if isinstance(respuesta, dict) else None
+    if not isinstance(reglas, list) or not all(_regla_legible(regla) for regla in reglas):
         return {"estado": "no_verificable", "CORSRules": None}
     return {"estado": "presente" if reglas else "vacio", "CORSRules": reglas}
 
@@ -100,9 +115,15 @@ def ejecutar(cliente, origenes, *, aplicar=False):
     regla = politica(origenes)
     anterior = consultar_cors(cliente)
     informe = {"lectura_previa": anterior["estado"], "escritura_solicitada": aplicar}
+    if aplicar and anterior["estado"] == "no_verificable":
+        # No existe una política previa recuperable. Detener antes de respaldo,
+        # PUT o preflight; una respuesta 200 incompleta no demuestra ausencia.
+        informe.update(lectura_final=anterior["estado"], regla_verificada=False,
+                       preflight=[], aprobado=False, error="lectura_previa_no_verificable")
+        return informe
     if aplicar:
         # Conserva reglas ajenas; sustituye únicamente nuestra regla identificada.
-        reglas = [r for r in anterior["CORSRules"] or [] if r.get("ID") != regla["ID"]]
+        reglas = [r for r in anterior["CORSRules"] if r.get("ID") != regla["ID"]]
         propuesta = {"CORSRules": reglas + [regla]}
         if len(propuesta["CORSRules"]) > 100:
             raise ValueError("Demasiadas reglas CORS; no se escribió la configuración.")

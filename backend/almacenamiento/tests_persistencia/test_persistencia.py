@@ -85,7 +85,7 @@ class PersistenciaTests(SimpleTestCase):
             self.assertEqual({c.name for c in descripcion}, {c.column for c in modelo._meta.local_fields})
         with connection.cursor() as cursor:
             cursor.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")
-            self.assertEqual(cursor.fetchone()[0], 13)
+            self.assertEqual(cursor.fetchone()[0], 14)
             cursor.execute("""SELECT table_name, column_name, character_maximum_length
                 FROM information_schema.columns
                 WHERE table_schema='public' AND

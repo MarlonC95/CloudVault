@@ -58,7 +58,7 @@ def main():
             informe["tablas_referencia_disponibles"] = {
                 t: conn.execute("SELECT to_regclass(%s) IS NOT NULL", ["public."+t]).fetchone()[0] for t in tablas}
             informe["diario_mantenimiento_disponible"] = conn.execute(
-                "SELECT to_regclass('almacenamiento_tecnico.trabajos_mantenimiento') IS NOT NULL").fetchone()[0]
+                "SELECT to_regclass('public.trabajos_mantenimiento') IS NOT NULL").fetchone()[0]
             for nombre in ("fecha_creacion", "creado_en"):
                 informe["usuarios_columna_" + nombre] = conn.execute("""SELECT EXISTS(
                     SELECT 1 FROM information_schema.columns WHERE table_schema='public'

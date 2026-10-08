@@ -26,6 +26,83 @@ class InformeEsquema:
         return not self.problemas
 
 
+def _inspeccionar_mantenimiento(cursor, problemas):
+    tabla = "public.trabajos_mantenimiento"
+    cursor.execute("SELECT to_regclass(%s)", [tabla])
+    if cursor.fetchone()[0] is None:
+        problemas.append(f"Falta {tabla}")
+        return
+    cursor.execute("""SELECT attname, format_type(atttypid, atttypmod), attnotnull
+        FROM pg_attribute WHERE attrelid=to_regclass(%s)
+        AND attnum>0 AND NOT attisdropped""", [tabla])
+    columnas = {nombre: (tipo, obligatorio) for nombre, tipo, obligatorio in cursor.fetchall()}
+    esperadas = {
+        "sesion_id": ("uuid", True), "cancelar": ("boolean", True),
+        "copia_concluida": ("boolean", True), "estado": ("character varying(16)", True),
+        "intentos": ("bigint", True), "fallos_consecutivos": ("integer", True),
+        "proximo_intento": ("timestamp with time zone", True),
+        "causa": ("character varying(32)", True),
+        "verificado_en": ("timestamp with time zone", False),
+        "creado_en": ("timestamp with time zone", True),
+        "actualizado_en": ("timestamp with time zone", True),
+    }
+    for columna, definicion in esperadas.items():
+        if columnas.get(columna) != definicion:
+            problemas.append(f"Mapping incompatible: {tabla}.{columna}")
+    cursor.execute("""SELECT c.contype, pg_get_constraintdef(c.oid), c.convalidated,
+        c.confdeltype, c.confrelid=to_regclass('public.sesiones_carga'),
+        ARRAY(SELECT a.attname FROM unnest(c.conkey) WITH ORDINALITY k(num, orden)
+              JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.num ORDER BY k.orden),
+        ARRAY(SELECT a.attname FROM unnest(c.confkey) WITH ORDINALITY k(num, orden)
+              JOIN pg_attribute a ON a.attrelid=c.confrelid AND a.attnum=k.num ORDER BY k.orden)
+        FROM pg_constraint c WHERE c.conrelid=to_regclass(%s)""", [tabla])
+    restricciones = cursor.fetchall()
+    if not any(tipo == "p" and validada and origen == ["sesion_id"]
+               for tipo, _, validada, _, _, origen, _ in restricciones):
+        problemas.append(f"Falta PK: {tabla}.sesion_id")
+    if not any(tipo == "f" and validada and borrado == "r" and referencia
+               and origen == ["sesion_id"] and destino == ["id"]
+               for tipo, _, validada, borrado, referencia, origen, destino in restricciones):
+        problemas.append(f"Falta FK: {tabla}.sesion_id")
+    checks = [
+        "CHECK (estado = ANY (ARRAY['PENDING', 'RETRY', 'RECONCILE', 'VERIFIED']))",
+        "CHECK (intentos >= 0)", "CHECK (fallos_consecutivos >= 0)",
+        "CHECK (causa = ANY (ARRAY['', 'URL_VIGENTE', 'COPY_AMBIGUO', 'REFERENCIADO', "
+        "'DEPENDENCIA', 'S3', 'SQL', 'INTEGRIDAD', 'OCUPADO', 'RECUPERACION', 'ERROR']))",
+        "CHECK (estado <> 'VERIFIED' OR verificado_en IS NOT NULL)",
+    ]
+    reales = {_normalizar_check(definicion) for tipo, definicion, validada, *_ in restricciones
+              if tipo == "c" and validada}
+    for check in checks:
+        if _normalizar_check(check) not in reales:
+            problemas.append(f"CHECK ausente o diferente en {tabla}: {check}")
+    cursor.execute("""SELECT i.indisvalid, i.indisready, i.indpred IS NULL,
+        i.indnkeyatts, i.indnatts, pg_get_indexdef(i.indexrelid,1,true),
+        pg_get_indexdef(i.indexrelid,2,true)
+        FROM pg_index i
+        WHERE i.indexrelid=to_regclass('public.idx_mantenimiento_proximo')
+        AND i.indrelid=to_regclass(%s)""", [tabla])
+    if cursor.fetchone() != (True, True, True, 2, 2, "proximo_intento", "sesion_id"):
+        problemas.append(f"Falta índice vigente: {tabla}.idx_mantenimiento_proximo")
+    cursor.execute("""SELECT EXISTS (
+        SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
+        JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE t.tgrelid=to_regclass(%s) AND t.tgname='trg_actualizar_trabajos_mantenimiento'
+        AND t.tgenabled IN ('O','A') AND NOT t.tgisinternal AND t.tgtype=19
+        AND t.tgqual IS NULL AND p.proname='trigger_actualizar_marca_tiempo'
+        AND n.nspname='public'
+    )""", [tabla])
+    if not cursor.fetchone()[0]:
+        problemas.append(f"Falta trigger de timestamps habilitado: {tabla}")
+    cursor.execute("SELECT has_schema_privilege(current_user, 'public', 'USAGE')")
+    if not cursor.fetchone()[0]:
+        problemas.append("Falta permiso USAGE: public")
+    for permiso in ("SELECT", "INSERT", "UPDATE"):
+        cursor.execute("SELECT has_table_privilege(current_user, %s, %s)", [tabla, permiso])
+        if not cursor.fetchone()[0]:
+            problemas.append(f"Falta permiso {permiso}: {tabla}")
+
+
 def inspeccionar_esquema(*, using="default") -> InformeEsquema:
     connection = connections[using]
     if connection.vendor != "postgresql":
@@ -102,6 +179,7 @@ def inspeccionar_esquema(*, using="default") -> InformeEsquema:
             )""", [tabla, f"trg_actualizar_{tabla}"])
             if not cursor.fetchone()[0]:
                 problemas.append(f"Falta trigger de timestamps habilitado: {tabla}")
+        _inspeccionar_mantenimiento(cursor, problemas)
         cursor.execute("""SELECT tgname FROM pg_trigger WHERE tgrelid=to_regclass('archivos')
                           AND NOT tgisinternal AND tgenabled IN ('O','A') ORDER BY tgname""")
         triggers = tuple(row[0] for row in cursor.fetchall())

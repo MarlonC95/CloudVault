@@ -259,16 +259,16 @@ print(json.dumps({'sesion': s.estado, 'ledger': i.estado, 'bytes': s.tamano_byte
 
     def test_trigger_sql_consumo_unico_y_doble_autoridad_revierte(self):
         with connection.cursor() as c:
-            c.execute("""CREATE FUNCTION almacenamiento_tecnico.consumo_ensayo() RETURNS trigger
+            c.execute("""CREATE FUNCTION public.consumo_ensayo() RETURNS trigger
                 LANGUAGE plpgsql AS $$ BEGIN UPDATE public.organizaciones
                 SET almacenamiento_usado_bytes=almacenamiento_usado_bytes+NEW.tamano_bytes
                 WHERE id=NEW.organizacion_id; RETURN NEW; END $$""")
             c.execute("""CREATE TRIGGER consumo_ensayo AFTER INSERT ON public.archivos
-                FOR EACH ROW EXECUTE FUNCTION almacenamiento_tecnico.consumo_ensayo()""")
+                FOR EACH ROW EXECUTE FUNCTION public.consumo_ensayo()""")
         def retirar():
             with connection.cursor() as c:
                 c.execute("DROP TRIGGER consumo_ensayo ON public.archivos")
-                c.execute("DROP FUNCTION almacenamiento_tecnico.consumo_ensayo()")
+                c.execute("DROP FUNCTION public.consumo_ensayo()")
         self.addCleanup(retirar)
         self.proveedor.trigger = True
         sesion = self.cargar()

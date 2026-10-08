@@ -6,7 +6,8 @@ red, lee .env, borra archivos ni instala fixtures en la base compartida.
 
 import hashlib
 import json
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import unquote, urlsplit
 
@@ -14,10 +15,15 @@ from django.db import connection
 from django.test import SimpleTestCase, override_settings
 from jsonschema import Draft4Validator, FormatChecker
 from rest_framework.test import APIClient
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.routers import DefaultRouter
+from rest_framework.viewsets import ViewSet
 
 from almacenamiento.cliente_integracion import CONTENIDO, FalloIntegracion, RespuestaHTTP, recorrer
 from almacenamiento.models import IntentoPublicacion, SesionCarga
 from almacenamiento.openapi import crear_openapi
+from almacenamiento.rutas_integracion import rutas_almacenamiento_y_negocio
 from almacenamiento.tests.test_openapi import _json_schema
 from .fixtures_aceptacion import ProveedorEnsayo
 from .test_inicio import InicioPersistenteTests
@@ -106,6 +112,49 @@ class ClienteEntregaPersistenteTests(SimpleTestCase):
         self.exponer_etag = False
         self.assertTrue(self.recorrer()["aprobado"])
         self.assertEqual(self.bucket.copias, 1)
+
+    def test_carga_con_router_de_negocio_publica_un_solo_archivo_visible(self):
+        # Solo doble lector de negocio sobre el fixture privado. No instala
+        # modelos/CRUD de otra rama ni acredita su proveedor de producción.
+        class MetadatosEnsayo(ViewSet):
+            permission_classes = [IsAuthenticated]
+
+            def list(self, request):
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT id,tamano_bytes FROM archivos ORDER BY id")
+                    archivos = [{"id": str(identidad), "tamano_bytes": tamano}
+                                for identidad, tamano in cursor.fetchall()]
+                return Response({"data": archivos})
+
+            def retrieve(self, request, pk=None):
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT id,tamano_bytes FROM archivos WHERE id=%s", [pk])
+                    identidad, tamano = cursor.fetchone()
+                return Response({"data": {"id": str(identidad), "tamano_bytes": tamano}})
+
+        negocio = ModuleType("almacenamiento.ensayo_negocio_urls")
+        raiz = ModuleType("almacenamiento.ensayo_conjunto_urls")
+        router = DefaultRouter()
+        router.register("archivos", MetadatosEnsayo, basename="metadatos-ensayo")
+        negocio.urlpatterns = router.urls
+        with patch.dict(sys.modules, {negocio.__name__: negocio, raiz.__name__: raiz}), \
+                override_settings(ROOT_URLCONF=raiz.__name__,
+                                  ALMACENAMIENTO_URLCONFS_NEGOCIO=[negocio.__name__]):
+            raiz.urlpatterns = rutas_almacenamiento_y_negocio()
+            self.assertEqual(self.client.get("/api/v1/archivos/").data, {"data": []})
+            informe = self.recorrer()  # Incluye segunda confirmación y descarga.
+            esperado = {"id": informe["archivo_id"], "tamano_bytes": len(CONTENIDO)}
+            listado = self.client.get("/api/v1/archivos/")
+            detalle = self.client.get(f"/api/v1/archivos/{informe['archivo_id']}/")
+            self.assertEqual(listado.status_code, 200)
+            self.assertEqual(detalle.status_code, 200)
+            self.assertEqual(listado.data, {"data": [esperado]})
+            self.assertEqual(detalle.data, {"data": esperado})
+        self.assertEqual(self.bucket.copias, 1)
+        self.assertEqual(self.bucket.borrados, [])
+        with connection.cursor() as cursor:
+            self.assertEqual(cursor.execute("SELECT almacenamiento_usado_bytes FROM organizaciones WHERE id=%s",
+                [self.proveedor.organizaciones[0]]).fetchone(), (len(CONTENIDO),))
 
     def test_cambio_estable_de_nombre_y_carpeta_conserva_descarga_identidad_y_uso(self):
         informe = self.recorrer()

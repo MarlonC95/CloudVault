@@ -95,4 +95,4 @@ class TrabajoMantenimiento(models.Model):
 
     class Meta:
         managed = False
-        db_table = '"almacenamiento_tecnico"."trabajos_mantenimiento"'
+        db_table = '"public"."trabajos_mantenimiento"'

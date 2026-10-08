@@ -1,8 +1,7 @@
--- Complemento técnico de Dani. Instalación por el responsable de SQL.
--- No altera el esquema de referencia ni instala triggers/roles de negocio.
--- Solo se aplica automáticamente en el PostgreSQL desechable de los tests.
-CREATE SCHEMA IF NOT EXISTS almacenamiento_tecnico;
-CREATE TABLE IF NOT EXISTS almacenamiento_tecnico.trabajos_mantenimiento (
+
+-- Complemento aprobado por el responsable SQL: tabla 14 en public.
+-- Su aplicación compartida pertenece a ese responsable, nunca al runtime.
+CREATE TABLE IF NOT EXISTS public.trabajos_mantenimiento (
     sesion_id UUID PRIMARY KEY REFERENCES public.sesiones_carga(id) ON DELETE RESTRICT,
     cancelar BOOLEAN NOT NULL DEFAULT FALSE,
     copia_concluida BOOLEAN NOT NULL DEFAULT FALSE,
@@ -20,4 +19,13 @@ CREATE TABLE IF NOT EXISTS almacenamiento_tecnico.trabajos_mantenimiento (
     CHECK (estado <> 'VERIFIED' OR verificado_en IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS idx_mantenimiento_proximo
-    ON almacenamiento_tecnico.trabajos_mantenimiento (proximo_intento, sesion_id);
+    ON public.trabajos_mantenimiento (proximo_intento, sesion_id);
+
+DROP TRIGGER IF EXISTS trg_actualizar_trabajos_mantenimiento ON public.trabajos_mantenimiento;
+CREATE TRIGGER trg_actualizar_trabajos_mantenimiento
+    BEFORE UPDATE ON public.trabajos_mantenimiento
+    FOR EACH ROW EXECUTE FUNCTION public.trigger_actualizar_marca_tiempo();
+
+GRANT SELECT ON public.trabajos_mantenimiento TO lector_cloudvault;
+-- El responsable SQL asigna SELECT/INSERT/UPDATE al rol real de Django.
+-- No se inventa aquí un nombre de rol de desarrollo.

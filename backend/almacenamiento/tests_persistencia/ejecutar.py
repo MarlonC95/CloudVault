@@ -1,4 +1,4 @@
-"""Arranca PostgreSQL propio, instala la referencia literal, prueba y elimina.
+"""Arranca PostgreSQL propio, instala la referencia literal, prueba y conserva.
 
 Requiere initdb y pg_ctl locales de la misma instalación; sin Docker/red/.env.
 """
@@ -65,7 +65,8 @@ def main():
         try:
             subprocess.run([ejecutables["initdb"], "-D", str(datos), "--auth-local=trust",
                             "--auth-host=reject", "--username=cloudvault_pruebas", "--no-locale",
-                            "--encoding=UTF8"], check=True, capture_output=True, text=True)
+                            "--encoding=UTF8"] + (["--no-clean"] if args.conservar else []),
+                           check=True, capture_output=True, text=True)
             # Valores generados sin espacios. No escucha conexiones TCP.
             subprocess.run(inicio_pg,
                 check=True, capture_output=True, text=True)
@@ -84,9 +85,9 @@ def main():
                     contexto["perfil"] = "AUTH_COMPAT_FECHA_OBSERVADA"
                     contexto["adaptacion_fixture"] = "Solo DB privada: usuarios.creado_en renombrado a fecha_creacion, como en la DB observada; no acredita compatibilidad del SQL literal."
                 contexto["postgresql"] = conn.info.server_version
-                print(f"PostgreSQL {conn.info.server_version}: 13 tablas instaladas en clúster privado; perfil "
+                print(f"PostgreSQL {conn.info.server_version}: 14 tablas instaladas en clúster privado; perfil "
                       + ("auth con mapping observado." if args.perfil_auth_desplegado else "SQL literal."), flush=True)
-                print("Complemento propio de mantenimiento instalado solo en almacenamiento_tecnico.", flush=True)
+                print("Complemento de mantenimiento instalado en public.trabajos_mantenimiento.", flush=True)
             # Reinicio real del servidor propio. La fila centinela no es un mock
             # ni un dato de aplicación; no se altera el SQL literal para probarlo.
             centinela = uuid4()
