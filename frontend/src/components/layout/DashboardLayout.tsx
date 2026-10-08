@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, Shield } from 'lucide-react'
-import { cerrarSesion, obtenerSesion } from '../../services/authService'
+import { cerrarSesionEnServidor, obtenerSesion } from '../../services/authService'
 import { COLOR_MARCA, COLOR_NAVY, COLOR_FONDO_PAGINA } from '../../theme/colores'
 import BarraSuperior from '../dashboard/BarraSuperior'
 
@@ -43,7 +43,7 @@ function DashboardLayout({ seccionActiva, onClickSubirArchivo, children }: Dashb
   const usuario = obtenerSesion()?.usuario
 
   function manejarSalida() {
-    cerrarSesion()
+    void cerrarSesionEnServidor()
     navegar('/login', { replace: true })
   }
 
