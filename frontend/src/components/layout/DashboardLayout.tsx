@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, Shield } from 'lucide-react'
 import { cerrarSesionEnServidor, obtenerSesion } from '../../services/authService'
+import { useArchivos } from '../../context/archivosContexto'
 import { obtenerResumenAlmacenamiento } from '../../services/unidadService'
 import { ErrorApi } from '../../services/errorApi'
 import { COLOR_MARCA, COLOR_NAVY, COLOR_FONDO_PAGINA } from '../../theme/colores'
@@ -44,6 +45,7 @@ interface DashboardLayoutProps {
 function DashboardLayout({ seccionActiva, onClickSubirArchivo, children }: DashboardLayoutProps) {
   const navegar = useNavigate()
   const usuario = obtenerSesion()?.usuario
+  const { archivos, papelera } = useArchivos()
 
   const [resumen, setResumen] = useState<ResumenAlmacenamiento | null>(null)
   const [cargandoResumen, setCargandoResumen] = useState(true)
@@ -64,7 +66,8 @@ function DashboardLayout({ seccionActiva, onClickSubirArchivo, children }: Dashb
     return () => {
       cancelado = true
     }
-  }, [])
+  // Se vuelve a pedir el resumen al cambiar archivos o papelera (subidas, borrados, restauraciones).
+  }, [archivos, papelera])
 
   function manejarSalida() {
     void cerrarSesionEnServidor()

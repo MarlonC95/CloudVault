@@ -10,7 +10,15 @@ import PlanesPage from '../pages/PlanesPage'
 import { obtenerSesion } from '../services/authService'
 
 function RutaProtegida() {
-  return obtenerSesion() ? <Outlet /> : <Navigate to="/login" replace />
+  // El provider vive aquí (no sobre todo el router) para cargar archivos solo con sesión
+  // y reiniciar su estado al cerrar sesión.
+  return obtenerSesion() ? (
+    <ArchivosProvider>
+      <Outlet />
+    </ArchivosProvider>
+  ) : (
+    <Navigate to="/login" replace />
+  )
 }
 
 function RutaPublica() {
@@ -20,22 +28,20 @@ function RutaPublica() {
 function AppRouter() {
   return (
     <BrowserRouter>
-      <ArchivosProvider>
-        <Routes>
-          <Route element={<RutaPublica />}>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/registro" element={<RegisterPage />} />
-            <Route path="/recuperar" element={<RecoverPasswordPage />} />
-          </Route>
-          <Route element={<RutaProtegida />}>
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/papelera" element={<PapeleraPage />} />
-            <Route path="/perfil" element={<ProfilePage />} />
-            <Route path="/planes" element={<PlanesPage />} />
-          </Route>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </ArchivosProvider>
+      <Routes>
+        <Route element={<RutaPublica />}>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/registro" element={<RegisterPage />} />
+          <Route path="/recuperar" element={<RecoverPasswordPage />} />
+        </Route>
+        <Route element={<RutaProtegida />}>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/papelera" element={<PapeleraPage />} />
+          <Route path="/perfil" element={<ProfilePage />} />
+          <Route path="/planes" element={<PlanesPage />} />
+        </Route>
+        <Route path="/" element={<Navigate to="/login" replace />} />
+      </Routes>
     </BrowserRouter>
   )
 }
