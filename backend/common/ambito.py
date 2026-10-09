@@ -53,8 +53,8 @@ def resolver_organizacion(usuario, organizacion_id=None, escritura=False, using=
             """SELECT m.organizacion_id, m.nivel_rol
                FROM miembros_organizacion m
                JOIN organizaciones o ON o.id = m.organizacion_id
-               WHERE m.usuario_id = %s AND o.esta_activo
-               ORDER BY m.creado_en, m.organizacion_id""",
+               WHERE m.usuario_id = %s
+               ORDER BY m.fecha_union, m.organizacion_id""",
             [usuario.pk],
         )
         membresias = cursor.fetchall()

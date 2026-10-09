@@ -30,7 +30,7 @@ class EsquemaSqlTests(TestCase):
             self.assertEqual(c.fetchone()[0], 3)
             usuario_id, org_id = espacio_de_trabajo()
             c.execute(
-                """INSERT INTO archivos (organizacion_id, propietario_id, nombre_original,
+                """INSERT INTO archivos (organizacion_id, propietario_id, nombre,
                    clave_s3, tamano_bytes, tipo_mime) VALUES (%s, %s, 'a.txt', 'k-test', 1000, 'text/plain')""",
                 [org_id, usuario_id],
             )
@@ -71,13 +71,6 @@ class ResolverOrganizacionTests(TestCase):
         resolver_organizacion(_Usuario(usuario_id))
         with self.assertRaises(PermissionDenied):
             resolver_organizacion(_Usuario(usuario_id), escritura=True)
-
-    def test_organizacion_inactiva_no_cuenta(self):
-        usuario_id = crear_usuario()
-        inactiva = crear_organizacion(activa=False)
-        agregar_miembro(inactiva, usuario_id, 0)
-        with self.assertRaises(PermissionDenied):
-            resolver_organizacion(_Usuario(usuario_id))
 
 
 class AutenticacionConUsuariosSqlTests(TestCase):

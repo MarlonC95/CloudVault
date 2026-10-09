@@ -31,12 +31,12 @@ def crear_usuario(correo=None, nombre="Usuario Prueba", using="default"):
     return uid
 
 
-def crear_organizacion(nombre="Organización de prueba", activa=True, using="default"):
+def crear_organizacion(nombre="Organización de prueba", using="default"):
     oid = uuid4()
     with connections[using].cursor() as c:
         c.execute(
-            "INSERT INTO organizaciones (id, nombre, slug, esta_activo) VALUES (%s, %s, %s, %s)",
-            [oid, nombre, f"org-{oid}", activa],
+            "INSERT INTO organizaciones (id, nombre, slug) VALUES (%s, %s, %s)",
+            [oid, nombre, f"org-{oid}"],
         )
     return oid
 
@@ -44,9 +44,9 @@ def crear_organizacion(nombre="Organización de prueba", activa=True, using="def
 def agregar_miembro(organizacion_id, usuario_id, nivel_rol=0, using="default"):
     with connections[using].cursor() as c:
         c.execute(
-            """INSERT INTO miembros_organizacion (id, organizacion_id, usuario_id, nivel_rol)
-               VALUES (%s, %s, %s, %s)""",
-            [uuid4(), organizacion_id, usuario_id, nivel_rol],
+            """INSERT INTO miembros_organizacion (organizacion_id, usuario_id, nivel_rol)
+               VALUES (%s, %s, %s)""",
+            [organizacion_id, usuario_id, nivel_rol],
         )
 
 
