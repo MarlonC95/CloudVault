@@ -1,10 +1,10 @@
 -- DDL reconstruido del esquema `public` desplegado (solo lectura del catálogo).
 -- Fuente de verdad para pruebas y para dev_pruebas. Sin datos ni credenciales.
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- Portable: gen_random_uuid() (PostgreSQL >= 13) reemplaza uuid_generate_v4() para no depender de uuid-ossp.
 
 -- Tablas: archivos, carpetas, enlaces_publicos, historial_pagos, intentos_publicacion, logs_auditoria, miembros_organizacion, organizaciones, permisos_recurso, planes, sesiones_carga, suscripciones, usuarios
 CREATE TABLE IF NOT EXISTS "archivos" (
-    "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+    "id" uuid NOT NULL DEFAULT gen_random_uuid(),
     "organizacion_id" uuid,
     "carpeta_id" uuid,
     "propietario_id" uuid NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS "archivos" (
     "actualizado_en" timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS "carpetas" (
-    "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+    "id" uuid NOT NULL DEFAULT gen_random_uuid(),
     "organizacion_id" uuid,
     "carpeta_padre_id" uuid,
     "nombre" character varying(255) NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS "carpetas" (
     "fecha_creacion" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS "enlaces_publicos" (
-    "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+    "id" uuid NOT NULL DEFAULT gen_random_uuid(),
     "token_random" character varying(255) NOT NULL,
     "archivo_id" uuid,
     "carpeta_id" uuid,
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS "enlaces_publicos" (
     "fecha_creacion" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS "historial_pagos" (
-    "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+    "id" uuid NOT NULL DEFAULT gen_random_uuid(),
     "suscripcion_id" uuid NOT NULL,
     "monto" numeric(10,2) NOT NULL,
     "estado" character varying(50) NOT NULL,
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS "miembros_organizacion" (
     "fecha_union" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS "organizaciones" (
-    "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+    "id" uuid NOT NULL DEFAULT gen_random_uuid(),
     "nombre" character varying(150) NOT NULL,
     "almacenamiento_usado_bytes" bigint NOT NULL DEFAULT 0,
     "fecha_creacion" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS "sesiones_carga" (
     "actualizado_en" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS "suscripciones" (
-    "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+    "id" uuid NOT NULL DEFAULT gen_random_uuid(),
     "organizacion_id" uuid NOT NULL,
     "plan_id" integer NOT NULL,
     "estado" character varying(50) NOT NULL DEFAULT 'ACTIVE'::character varying,
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS "suscripciones" (
     "intervalo" character varying(20) NOT NULL DEFAULT 'MONTHLY'::character varying
 );
 CREATE TABLE IF NOT EXISTS "usuarios" (
-    "id" uuid NOT NULL DEFAULT public.uuid_generate_v4(),
+    "id" uuid NOT NULL DEFAULT gen_random_uuid(),
     "correo_electronico" character varying(255) NOT NULL,
     "contrasena_hash" character varying(255) NOT NULL,
     "nombre_completo" character varying(150) NOT NULL,
@@ -166,27 +166,27 @@ ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_checksum_sha256_chec
 ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_estado_check" CHECK (((estado)::text = ANY ((ARRAY['PENDING'::character varying, 'CONFIRMED'::character varying, 'CANCELED'::character varying, 'EXPIRED'::character varying])::text[])));
 ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_tamano_bytes_check" CHECK ((tamano_bytes >= 0));
 ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_intervalo_check" CHECK (((intervalo)::text = ANY ((ARRAY['MONTHLY'::character varying, 'YEARLY'::character varying])::text[])));
-ALTER TABLE "archivos" ADD CONSTRAINT "archivos_carpeta_id_fkey" FOREIGN KEY (carpeta_id) REFERENCES public.carpetas(id) ON DELETE SET NULL;
-ALTER TABLE "archivos" ADD CONSTRAINT "archivos_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES public.organizaciones(id) ON DELETE CASCADE;
-ALTER TABLE "archivos" ADD CONSTRAINT "archivos_propietario_id_fkey" FOREIGN KEY (propietario_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
-ALTER TABLE "carpetas" ADD CONSTRAINT "carpetas_carpeta_padre_id_fkey" FOREIGN KEY (carpeta_padre_id) REFERENCES public.carpetas(id) ON DELETE CASCADE;
-ALTER TABLE "carpetas" ADD CONSTRAINT "carpetas_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES public.organizaciones(id) ON DELETE CASCADE;
-ALTER TABLE "enlaces_publicos" ADD CONSTRAINT "enlaces_publicos_archivo_id_fkey" FOREIGN KEY (archivo_id) REFERENCES public.archivos(id) ON DELETE CASCADE;
-ALTER TABLE "enlaces_publicos" ADD CONSTRAINT "enlaces_publicos_carpeta_id_fkey" FOREIGN KEY (carpeta_id) REFERENCES public.carpetas(id) ON DELETE CASCADE;
-ALTER TABLE "historial_pagos" ADD CONSTRAINT "historial_pagos_suscripcion_id_fkey" FOREIGN KEY (suscripcion_id) REFERENCES public.suscripciones(id) ON DELETE CASCADE;
-ALTER TABLE "intentos_publicacion" ADD CONSTRAINT "intentos_publicacion_sesion_id_fkey" FOREIGN KEY (sesion_id) REFERENCES public.sesiones_carga(id) ON DELETE RESTRICT;
-ALTER TABLE "logs_auditoria" ADD CONSTRAINT "logs_auditoria_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES public.organizaciones(id) ON DELETE CASCADE;
-ALTER TABLE "logs_auditoria" ADD CONSTRAINT "logs_auditoria_usuario_id_fkey" FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE SET NULL;
-ALTER TABLE "miembros_organizacion" ADD CONSTRAINT "miembros_organizacion_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES public.organizaciones(id) ON DELETE CASCADE;
-ALTER TABLE "miembros_organizacion" ADD CONSTRAINT "miembros_organizacion_usuario_id_fkey" FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE CASCADE;
-ALTER TABLE "permisos_recurso" ADD CONSTRAINT "permisos_recurso_archivo_id_fkey" FOREIGN KEY (archivo_id) REFERENCES public.archivos(id) ON DELETE CASCADE;
-ALTER TABLE "permisos_recurso" ADD CONSTRAINT "permisos_recurso_carpeta_id_fkey" FOREIGN KEY (carpeta_id) REFERENCES public.carpetas(id) ON DELETE CASCADE;
-ALTER TABLE "permisos_recurso" ADD CONSTRAINT "permisos_recurso_usuario_id_fkey" FOREIGN KEY (usuario_id) REFERENCES public.usuarios(id) ON DELETE CASCADE;
-ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_carpeta_id_fkey" FOREIGN KEY (carpeta_id) REFERENCES public.carpetas(id) ON DELETE SET NULL;
-ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES public.organizaciones(id) ON DELETE CASCADE;
-ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_solicitante_id_fkey" FOREIGN KEY (solicitante_id) REFERENCES public.usuarios(id) ON DELETE RESTRICT;
-ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES public.organizaciones(id) ON DELETE CASCADE;
-ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_plan_id_fkey" FOREIGN KEY (plan_id) REFERENCES public.planes(id) ON DELETE RESTRICT;
+ALTER TABLE "archivos" ADD CONSTRAINT "archivos_carpeta_id_fkey" FOREIGN KEY (carpeta_id) REFERENCES carpetas(id) ON DELETE SET NULL;
+ALTER TABLE "archivos" ADD CONSTRAINT "archivos_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES organizaciones(id) ON DELETE CASCADE;
+ALTER TABLE "archivos" ADD CONSTRAINT "archivos_propietario_id_fkey" FOREIGN KEY (propietario_id) REFERENCES usuarios(id) ON DELETE RESTRICT;
+ALTER TABLE "carpetas" ADD CONSTRAINT "carpetas_carpeta_padre_id_fkey" FOREIGN KEY (carpeta_padre_id) REFERENCES carpetas(id) ON DELETE CASCADE;
+ALTER TABLE "carpetas" ADD CONSTRAINT "carpetas_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES organizaciones(id) ON DELETE CASCADE;
+ALTER TABLE "enlaces_publicos" ADD CONSTRAINT "enlaces_publicos_archivo_id_fkey" FOREIGN KEY (archivo_id) REFERENCES archivos(id) ON DELETE CASCADE;
+ALTER TABLE "enlaces_publicos" ADD CONSTRAINT "enlaces_publicos_carpeta_id_fkey" FOREIGN KEY (carpeta_id) REFERENCES carpetas(id) ON DELETE CASCADE;
+ALTER TABLE "historial_pagos" ADD CONSTRAINT "historial_pagos_suscripcion_id_fkey" FOREIGN KEY (suscripcion_id) REFERENCES suscripciones(id) ON DELETE CASCADE;
+ALTER TABLE "intentos_publicacion" ADD CONSTRAINT "intentos_publicacion_sesion_id_fkey" FOREIGN KEY (sesion_id) REFERENCES sesiones_carga(id) ON DELETE RESTRICT;
+ALTER TABLE "logs_auditoria" ADD CONSTRAINT "logs_auditoria_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES organizaciones(id) ON DELETE CASCADE;
+ALTER TABLE "logs_auditoria" ADD CONSTRAINT "logs_auditoria_usuario_id_fkey" FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL;
+ALTER TABLE "miembros_organizacion" ADD CONSTRAINT "miembros_organizacion_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES organizaciones(id) ON DELETE CASCADE;
+ALTER TABLE "miembros_organizacion" ADD CONSTRAINT "miembros_organizacion_usuario_id_fkey" FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE;
+ALTER TABLE "permisos_recurso" ADD CONSTRAINT "permisos_recurso_archivo_id_fkey" FOREIGN KEY (archivo_id) REFERENCES archivos(id) ON DELETE CASCADE;
+ALTER TABLE "permisos_recurso" ADD CONSTRAINT "permisos_recurso_carpeta_id_fkey" FOREIGN KEY (carpeta_id) REFERENCES carpetas(id) ON DELETE CASCADE;
+ALTER TABLE "permisos_recurso" ADD CONSTRAINT "permisos_recurso_usuario_id_fkey" FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE;
+ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_carpeta_id_fkey" FOREIGN KEY (carpeta_id) REFERENCES carpetas(id) ON DELETE SET NULL;
+ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES organizaciones(id) ON DELETE CASCADE;
+ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_solicitante_id_fkey" FOREIGN KEY (solicitante_id) REFERENCES usuarios(id) ON DELETE RESTRICT;
+ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES organizaciones(id) ON DELETE CASCADE;
+ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_plan_id_fkey" FOREIGN KEY (plan_id) REFERENCES planes(id) ON DELETE RESTRICT;
 
 CREATE INDEX IF NOT EXISTS idx_archivos_carpeta ON archivos USING btree (carpeta_id);
 CREATE INDEX IF NOT EXISTS idx_archivos_org ON archivos USING btree (organizacion_id);
@@ -260,7 +260,7 @@ CREATE OR REPLACE TRIGGER trg_actualizar_organizaciones BEFORE UPDATE ON organiz
 CREATE OR REPLACE TRIGGER trg_actualizar_sesiones_carga BEFORE UPDATE ON sesiones_carga FOR EACH ROW EXECUTE FUNCTION trigger_actualizar_marca_tiempo();
 CREATE OR REPLACE TRIGGER trg_actualizar_usuarios BEFORE UPDATE ON usuarios FOR EACH ROW EXECUTE FUNCTION trigger_actualizar_marca_tiempo();
 
--- Semillas de planes (copiadas de public.planes)
+-- Semillas de planes (copiadas de la tabla planes desplegada)
 INSERT INTO planes (id, nombre, limite_almacenamiento_bytes, precio, esta_activo) VALUES (1, 'Gratuito / Básico', 16106127360, 0.00, TRUE) ON CONFLICT (id) DO NOTHING;
 INSERT INTO planes (id, nombre, limite_almacenamiento_bytes, precio, esta_activo) VALUES (2, 'Pro PaaS / Premium', 107374182400, 29.00, TRUE) ON CONFLICT (id) DO NOTHING;
 INSERT INTO planes (id, nombre, limite_almacenamiento_bytes, precio, esta_activo) VALUES (3, 'Empresarial / Platinum', 1099511627776, 99.00, TRUE) ON CONFLICT (id) DO NOTHING;
