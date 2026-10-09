@@ -1,9 +1,12 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, Shield } from 'lucide-react'
 import { cerrarSesionEnServidor, obtenerSesion } from '../../services/authService'
+import { obtenerResumenAlmacenamiento } from '../../services/unidadService'
+import { ErrorApi } from '../../services/errorApi'
 import { COLOR_MARCA, COLOR_NAVY, COLOR_FONDO_PAGINA } from '../../theme/colores'
 import BarraSuperior from '../dashboard/BarraSuperior'
+import type { ResumenAlmacenamiento } from '../../types/unidad'
 
 export type SeccionExplorador =
   | 'mi-unidad'
@@ -42,15 +45,35 @@ function DashboardLayout({ seccionActiva, onClickSubirArchivo, children }: Dashb
   const navegar = useNavigate()
   const usuario = obtenerSesion()?.usuario
 
+  const [resumen, setResumen] = useState<ResumenAlmacenamiento | null>(null)
+  const [cargandoResumen, setCargandoResumen] = useState(true)
+  const [errorResumen, setErrorResumen] = useState('')
+
+  useEffect(() => {
+    let cancelado = false
+    obtenerResumenAlmacenamiento()
+      .then((datos) => {
+        if (!cancelado) setResumen(datos)
+      })
+      .catch((error) => {
+        if (!cancelado) setErrorResumen(error instanceof ErrorApi ? error.message : 'No se pudo cargar el resumen.')
+      })
+      .finally(() => {
+        if (!cancelado) setCargandoResumen(false)
+      })
+    return () => {
+      cancelado = true
+    }
+  }, [])
+
   function manejarSalida() {
     void cerrarSesionEnServidor()
     navegar('/login', { replace: true })
   }
 
-  // TODO: reemplazar por datos reales del plan del usuario cuando exista la API
-  const almacenamientoUsadoGb = 45
-  const almacenamientoTotalGb = 100
-  const porcentajeUsado = (almacenamientoUsadoGb / almacenamientoTotalGb) * 100
+  const usadoTexto = resumen?.usadoLegible ?? '—'
+  const totalTexto = resumen?.cuotaLegible ?? '—'
+  const porcentajeUsado = resumen?.porcentajeUsado ?? 0
 
   function renderizarBotonMenu(elemento: ElementoMenu) {
     const estaActivo = seccionActiva === elemento.id
@@ -115,28 +138,50 @@ function DashboardLayout({ seccionActiva, onClickSubirArchivo, children }: Dashb
 
         <div className="mt-auto pt-4">
           <div className="p-3" style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
-            <div className="d-flex justify-content-between small mb-2">
-              <span className="fw-semibold">Almacenamiento</span>
-              <span style={{ color: 'rgba(255,255,255,0.6)' }}>
-                {almacenamientoUsadoGb}/{almacenamientoTotalGb} GB
-              </span>
-            </div>
-            <div className="mb-2" style={{ height: '6px', borderRadius: '3px', backgroundColor: 'rgba(255,255,255,0.15)' }}>
-              <div
-                style={{ height: '100%', width: `${porcentajeUsado}%`, borderRadius: '3px', backgroundColor: COLOR_MARCA }}
-              />
-            </div>
-            <p className="small mb-3" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              {almacenamientoTotalGb - almacenamientoUsadoGb} GB disponibles
-            </p>
-            <button
-              type="button"
-              className="btn btn-outline-light w-100 btn-sm fw-semibold"
-              style={{ borderRadius: '8px' }}
-              onClick={() => navegar('/planes')}
-            >
-              Ampliar Plan
-            </button>
+            {cargandoResumen ? (
+              <p className="small text-center mb-0" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                Cargando almacenamiento…
+              </p>
+            ) : errorResumen ? (
+              <>
+                <p className="small text-center mb-2" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                  {errorResumen}
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-outline-light w-100 btn-sm fw-semibold"
+                  style={{ borderRadius: '8px' }}
+                  onClick={() => navegar('/planes')}
+                >
+                  Ampliar Plan
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="d-flex justify-content-between small mb-2">
+                  <span className="fw-semibold">Almacenamiento</span>
+                  <span style={{ color: 'rgba(255,255,255,0.6)' }}>
+                    {usadoTexto} / {totalTexto}
+                  </span>
+                </div>
+                <div className="mb-2" style={{ height: '6px', borderRadius: '3px', backgroundColor: 'rgba(255,255,255,0.15)' }}>
+                  <div
+                    style={{ height: '100%', width: `${porcentajeUsado}%`, borderRadius: '3px', backgroundColor: COLOR_MARCA }}
+                  />
+                </div>
+                <p className="small mb-3" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                  {resumen?.libreLegible ?? '—'} disponibles
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-outline-light w-100 btn-sm fw-semibold"
+                  style={{ borderRadius: '8px' }}
+                  onClick={() => navegar('/planes')}
+                >
+                  Ampliar Plan
+                </button>
+              </>
+            )}
           </div>
         </div>
       </aside>

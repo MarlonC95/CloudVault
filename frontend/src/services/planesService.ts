@@ -17,7 +17,14 @@ interface MiPlanApi {
   plan: { id: string; nombre: string; tipo_facturacion: TipoFacturacion }
   estado: string
   renueva_en: string
-  almacenamiento: { porcentaje_usado: number }
+  almacenamiento: {
+    usado_bytes: number
+    cuota_bytes: number | null
+    usado_legible: string
+    cuota_legible: string
+    libre_legible: string
+    porcentaje_usado: number
+  }
 }
 
 interface FacturaApi {
@@ -60,7 +67,14 @@ export async function obtenerMiPlan(): Promise<MiPlan> {
     },
     estado: miPlan.estado,
     renuevaEn: miPlan.renueva_en,
-    porcentajeUsado: miPlan.almacenamiento.porcentaje_usado,
+    almacenamiento: {
+      usadoBytes: miPlan.almacenamiento.usado_bytes,
+      cuotaBytes: miPlan.almacenamiento.cuota_bytes,
+      usadoLegible: miPlan.almacenamiento.usado_legible,
+      cuotaLegible: miPlan.almacenamiento.cuota_legible,
+      libreLegible: miPlan.almacenamiento.libre_legible,
+      porcentajeUsado: miPlan.almacenamiento.porcentaje_usado,
+    },
   }
 }
 

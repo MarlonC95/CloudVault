@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ChevronRight,
@@ -14,9 +14,15 @@ import {
   Upload,
   Users,
   Download,
+  Loader2,
 } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
-import { obtenerSesion } from '../services/authService'
+import { obtenerPerfil, actualizarPerfil, cambiarContrasena, cambiarPalabraSecreta } from '../services/perfilService'
+import { ErrorApi } from '../services/errorApi'
+import type { PerfilUsuario } from '../types/perfil'
+
+const LONGITUD_MINIMA_CONTRASENA = 8
+const LONGITUD_MINIMA_PALABRA_SECRETA = 12
 
 const CATEGORIAS_ALMACENAMIENTO = [
   { etiqueta: 'Documentos', tamano: '18 GB', color: '#2563EB' },
@@ -30,39 +36,202 @@ const ACTIVIDAD_RECIENTE = [
   { accion: 'Descarga', archivo: 'Respaldo_BaseDatos.zip', tiempo: '30 Ago', icono: <Download size={13} color="#64748B" strokeWidth={2} /> },
 ]
 
-function ProfilePage() {
-  const navegar = useNavigate()
-  const usuario = obtenerSesion()?.usuario
-
-  const [modoEdicion, setModoEdicion] = useState(false)
-  const [cambiandoContrasena, setCambiandoContrasena] = useState(false)
-  const [dosFactores, setDosFactores] = useState(true)
-  const [modificandoPalabraSecreta, setModificandoPalabraSecreta] = useState(false)
-  const [palabraSecreta, setPalabraSecreta] = useState('')
-  const [nombre, setNombre] = useState(usuario?.nombreCompleto ?? '')
-  const [correo, setCorreo] = useState(usuario?.correoElectronico ?? '')
-
-  const almacenamientoUsado = 45
-  const almacenamientoTotal = 100
-
-  const iniciales = nombre
+function calcularIniciales(nombre: string): string {
+  return nombre
     .split(' ')
     .map((palabra) => palabra[0])
     .slice(0, 2)
     .join('')
     .toUpperCase()
+}
 
-  function alternarEdicion() {
-    // TODO(backend): al guardar, llamar a PATCH /api/auth/perfil/ con { nombre, correo }
+function ProfilePage() {
+  const navegar = useNavigate()
+
+  const [perfil, setPerfil] = useState<PerfilUsuario | null>(null)
+  const [cargando, setCargando] = useState(true)
+  const [errorGeneral, setErrorGeneral] = useState('')
+  const [mensajeExito, setMensajeExito] = useState('')
+
+  const [modoEdicion, setModoEdicion] = useState(false)
+  const [nombre, setNombre] = useState('')
+  const [correo, setCorreo] = useState('')
+
+  const [cambiandoContrasena, setCambiandoContrasena] = useState(false)
+  const [contrasenaActual, setContrasenaActual] = useState('')
+  const [nuevaContrasena, setNuevaContrasena] = useState('')
+  const [confirmarContrasena, setConfirmarContrasena] = useState('')
+  const [erroresContrasena, setErroresContrasena] = useState<Record<string, string>>({})
+
+  const [modificandoPalabraSecreta, setModificandoPalabraSecreta] = useState(false)
+  const [contrasenaActualPalabra, setContrasenaActualPalabra] = useState('')
+  const [palabraSecreta, setPalabraSecreta] = useState('')
+  const [errorPalabraSecreta, setErrorPalabraSecreta] = useState('')
+
+  const [dosFactores, setDosFactores] = useState(false)
+
+  async function cargarPerfil() {
+    try {
+      const datos = await obtenerPerfil()
+      setPerfil(datos)
+      setNombre(datos.nombreCompleto)
+      setCorreo(datos.correoElectronico)
+      setDosFactores(datos.dosFactores)
+    } catch (error) {
+      setErrorGeneral(error instanceof ErrorApi ? error.message : 'No se pudo cargar el perfil.')
+    } finally {
+      setCargando(false)
+    }
+  }
+
+  useEffect(() => {
+    let cancelado = false
+    obtenerPerfil()
+      .then((datos) => {
+        if (cancelado) return
+        setPerfil(datos)
+        setNombre(datos.nombreCompleto)
+        setCorreo(datos.correoElectronico)
+        setDosFactores(datos.dosFactores)
+      })
+      .catch((error) => {
+        if (!cancelado) setErrorGeneral(error instanceof ErrorApi ? error.message : 'No se pudo cargar el perfil.')
+      })
+      .finally(() => {
+        if (!cancelado) setCargando(false)
+      })
+    return () => {
+      cancelado = true
+    }
+  }, [])
+
+  async function alternarEdicion() {
+    if (modoEdicion && perfil) {
+      const huboCambio = nombre !== perfil.nombreCompleto || correo !== perfil.correoElectronico
+      if (huboCambio) {
+        setErrorGeneral('')
+        setMensajeExito('')
+        try {
+          await actualizarPerfil({ nombreCompleto: nombre, correoElectronico: correo })
+          setMensajeExito('Perfil actualizado correctamente.')
+          await cargarPerfil()
+        } catch (error) {
+          setErrorGeneral(error instanceof ErrorApi ? error.message : 'No se pudo actualizar el perfil.')
+          setNombre(perfil.nombreCompleto)
+          setCorreo(perfil.correoElectronico)
+        }
+      }
+    }
     setModoEdicion((valor) => !valor)
   }
+
+  function validarContrasena(): Record<string, string> {
+    const errores: Record<string, string> = {}
+    if (!contrasenaActual) errores.contrasenaActual = 'Ingresa tu contraseña actual'
+    if (!nuevaContrasena) {
+      errores.nuevaContrasena = 'Ingresa la nueva contraseña'
+    } else if (nuevaContrasena.length < LONGITUD_MINIMA_CONTRASENA) {
+      errores.nuevaContrasena = `Debe tener al menos ${LONGITUD_MINIMA_CONTRASENA} caracteres`
+    }
+    if (nuevaContrasena !== confirmarContrasena) {
+      errores.confirmarContrasena = 'Las contraseñas no coinciden'
+    }
+    return errores
+  }
+
+  async function guardarContrasena() {
+    const errores = validarContrasena()
+    setErroresContrasena(errores)
+    if (Object.keys(errores).length > 0) return
+
+    setErrorGeneral('')
+    setMensajeExito('')
+    try {
+      await cambiarContrasena({ contrasenaActual, nuevaContrasena, confirmarContrasena })
+      setMensajeExito('Contraseña actualizada correctamente.')
+      setCambiandoContrasena(false)
+      setContrasenaActual('')
+      setNuevaContrasena('')
+      setConfirmarContrasena('')
+      setErroresContrasena({})
+    } catch (error) {
+      if (error instanceof ErrorApi && error.codigo === 'VALIDATION_ERROR') {
+        setErroresContrasena({
+          contrasenaActual: error.campos.contrasena_actual?.[0],
+          nuevaContrasena: error.campos.nueva_contrasena?.[0],
+          confirmarContrasena: error.campos.confirmar_contrasena?.[0],
+        })
+      } else {
+        setErrorGeneral(error instanceof ErrorApi ? error.message : 'No se pudo cambiar la contraseña.')
+      }
+    }
+  }
+
+  function cancelarContrasena() {
+    setCambiandoContrasena(false)
+    setContrasenaActual('')
+    setNuevaContrasena('')
+    setConfirmarContrasena('')
+    setErroresContrasena({})
+  }
+
+  async function guardarPalabraSecreta() {
+    setErrorPalabraSecreta('')
+    if (!contrasenaActualPalabra) {
+      setErrorPalabraSecreta('Ingresa tu contraseña actual')
+      return
+    }
+    if (!palabraSecreta || palabraSecreta.length < LONGITUD_MINIMA_PALABRA_SECRETA) {
+      setErrorPalabraSecreta(`La palabra secreta debe tener al menos ${LONGITUD_MINIMA_PALABRA_SECRETA} caracteres`)
+      return
+    }
+
+    setErrorGeneral('')
+    setMensajeExito('')
+    try {
+      await cambiarPalabraSecreta({ contrasenaActual: contrasenaActualPalabra, nuevaPalabraSecreta: palabraSecreta })
+      setMensajeExito('Palabra secreta actualizada correctamente.')
+      setModificandoPalabraSecreta(false)
+      setContrasenaActualPalabra('')
+      setPalabraSecreta('')
+    } catch (error) {
+      if (error instanceof ErrorApi && error.codigo === 'VALIDATION_ERROR') {
+        setErrorPalabraSecreta(error.campos.nueva_palabra_secreta?.[0] ?? 'Revisa los datos enviados.')
+      } else {
+        setErrorGeneral(error instanceof ErrorApi ? error.message : 'No se pudo actualizar la palabra secreta.')
+      }
+    }
+  }
+
+  function cancelarPalabraSecreta() {
+    setModificandoPalabraSecreta(false)
+    setContrasenaActualPalabra('')
+    setPalabraSecreta('')
+    setErrorPalabraSecreta('')
+  }
+
+  const almacenamientoUsado = perfil?.almacenamiento.usadoLegible ?? '—'
+  const almacenamientoTotal = perfil?.almacenamiento.cuotaLegible ?? '—'
+  const porcentajeUsado = perfil?.almacenamiento.porcentajeUsado ?? 0
+  const nombrePlan = perfil?.plan.nombre ?? '—'
 
   const campos = [
     { etiqueta: 'Nombre Completo', valor: nombre, icono: <User size={14} color="#94A3B8" strokeWidth={1.8} />, editable: true, onCambiar: setNombre },
     { etiqueta: 'Correo Electrónico', valor: correo, icono: <Mail size={14} color="#94A3B8" strokeWidth={1.8} />, editable: true, onCambiar: setCorreo },
-    { etiqueta: 'Rol en el Sistema', valor: 'Desarrollador / Admin', icono: <Shield size={14} color="#94A3B8" strokeWidth={1.8} />, editable: false },
-    { etiqueta: 'Nivel de Almacenamiento', valor: '100 GB (Pro PaaS)', icono: <HardDrive size={14} color="#94A3B8" strokeWidth={1.8} />, editable: false },
+    { etiqueta: 'Rol en el Sistema', valor: perfil?.rol ?? '—', icono: <Shield size={14} color="#94A3B8" strokeWidth={1.8} />, editable: false },
+    { etiqueta: 'Nivel de Almacenamiento', valor: `${almacenamientoTotal} (${nombrePlan})`, icono: <HardDrive size={14} color="#94A3B8" strokeWidth={1.8} />, editable: false },
   ]
+
+  if (cargando) {
+    return (
+      <DashboardLayout>
+        <div style={{ padding: '36px 28px', textAlign: 'center', color: '#64748B' }}>
+          <Loader2 size={32} style={{ animation: 'spin 1s linear infinite', marginBottom: 12 }} />
+          <p className="mb-0">Cargando perfil…</p>
+        </div>
+      </DashboardLayout>
+    )
+  }
 
   return (
     <DashboardLayout>
@@ -94,6 +263,17 @@ function ProfilePage() {
         <p style={{ fontSize: 14, color: '#64748B', marginBottom: 28 }}>
           Gestiona tu información personal, seguridad y preferencias.
         </p>
+
+        {mensajeExito && (
+          <div className="alert alert-success" role="alert" style={{ maxWidth: 720 }}>
+            {mensajeExito}
+          </div>
+        )}
+        {errorGeneral && (
+          <div className="alert alert-danger" role="alert" style={{ maxWidth: 720 }}>
+            {errorGeneral}
+          </div>
+        )}
 
         {/* Tarjeta de identidad */}
         <div
@@ -147,12 +327,12 @@ function ProfilePage() {
                     zIndex: 1,
                   }}
                 >
-                  {iniciales || 'US'}
+                  {calcularIniciales(nombre) || 'US'}
                 </div>
                 <div style={{ paddingBottom: 2 }}>
                   <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', margin: 0 }}>{nombre}</h2>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                    <span style={{ fontSize: 12, color: '#64748B' }}>Desarrollador / Admin</span>
+                    <span style={{ fontSize: 12, color: '#64748B' }}>{perfil?.rol ?? '—'}</span>
                     <span
                       style={{
                         fontSize: 10,
@@ -164,7 +344,7 @@ function ProfilePage() {
                         letterSpacing: '0.04em',
                       }}
                     >
-                      Plan Pro Activo
+                      {nombrePlan} Activo
                     </span>
                   </div>
                 </div>
@@ -271,40 +451,62 @@ function ProfilePage() {
               </button>
             ) : (
               <div style={{ background: '#F8FAFC', border: '1px solid #2563EB', borderRadius: 10, padding: '14px', marginBottom: 10 }}>
-                <p style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', marginBottom: 10 }}>Nueva contraseña</p>
-                {['Nueva contraseña', 'Confirmar contraseña'].map((marcador) => (
-                  <div key={marcador} style={{ position: 'relative', marginBottom: 8 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', marginBottom: 10 }}>Cambiar contraseña</p>
+                {[
+                  {
+                    marcador: 'Contraseña actual',
+                    valor: contrasenaActual,
+                    cambiar: setContrasenaActual,
+                    error: erroresContrasena.contrasenaActual,
+                  },
+                  {
+                    marcador: 'Nueva contraseña',
+                    valor: nuevaContrasena,
+                    cambiar: setNuevaContrasena,
+                    error: erroresContrasena.nuevaContrasena,
+                  },
+                  {
+                    marcador: 'Confirmar contraseña',
+                    valor: confirmarContrasena,
+                    cambiar: setConfirmarContrasena,
+                    error: erroresContrasena.confirmarContrasena,
+                  },
+                ].map((campo) => (
+                  <div key={campo.marcador} style={{ position: 'relative', marginBottom: 8 }}>
                     <div style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', display: 'flex', pointerEvents: 'none' }}>
                       <Lock size={13} color="#94A3B8" strokeWidth={1.8} />
                     </div>
                     <input
                       type="password"
-                      placeholder={marcador}
+                      placeholder={campo.marcador}
+                      value={campo.valor}
+                      onChange={(evento) => campo.cambiar(evento.target.value)}
                       style={{
                         width: '100%',
                         boxSizing: 'border-box',
                         padding: '9px 12px 9px 32px',
                         fontSize: 13,
-                        border: '1.5px solid #E2E8F0',
+                        border: `1.5px solid ${campo.error ? '#DC2626' : '#E2E8F0'}`,
                         borderRadius: 7,
                         outline: 'none',
                         color: '#0F172A',
                         background: '#fff',
                       }}
                     />
+                    {campo.error && <div style={{ fontSize: 11, color: '#DC2626', marginTop: 4 }}>{campo.error}</div>}
                   </div>
                 ))}
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                   <button
                     type="button"
-                    onClick={() => setCambiandoContrasena(false)}
+                    onClick={guardarContrasena}
                     style={{ flex: 1, background: '#2563EB', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 0', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
                   >
                     Guardar
                   </button>
                   <button
                     type="button"
-                    onClick={() => setCambiandoContrasena(false)}
+                    onClick={cancelarContrasena}
                     style={{ flex: 1, background: '#fff', color: '#64748B', border: '1px solid #E2E8F0', borderRadius: 7, padding: '8px 0', fontSize: 12, cursor: 'pointer' }}
                   >
                     Cancelar
@@ -345,6 +547,29 @@ function ProfilePage() {
                 <p style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', marginBottom: 10 }}>Nueva palabra secreta</p>
                 <div style={{ position: 'relative', marginBottom: 8 }}>
                   <div style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', display: 'flex', pointerEvents: 'none' }}>
+                    <Lock size={13} color="#94A3B8" strokeWidth={1.8} />
+                  </div>
+                  <input
+                    type="password"
+                    placeholder="Contraseña actual"
+                    value={contrasenaActualPalabra}
+                    onChange={(evento) => setContrasenaActualPalabra(evento.target.value)}
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      padding: '9px 12px 9px 32px',
+                      fontSize: 13,
+                      border: `1.5px solid ${errorPalabraSecreta && !palabraSecreta ? '#DC2626' : '#E2E8F0'}`,
+                      borderRadius: 7,
+                      outline: 'none',
+                      color: '#0F172A',
+                      background: '#fff',
+                      marginBottom: 8,
+                    }}
+                  />
+                </div>
+                <div style={{ position: 'relative', marginBottom: 8 }}>
+                  <div style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', display: 'flex', pointerEvents: 'none' }}>
                     <KeyRound size={13} color="#94A3B8" strokeWidth={1.8} />
                   </div>
                   <input
@@ -357,25 +582,26 @@ function ProfilePage() {
                       boxSizing: 'border-box',
                       padding: '9px 12px 9px 32px',
                       fontSize: 13,
-                      border: '1.5px solid #E2E8F0',
+                      border: `1.5px solid ${errorPalabraSecreta ? '#DC2626' : '#E2E8F0'}`,
                       borderRadius: 7,
                       outline: 'none',
                       color: '#0F172A',
                       background: '#fff',
                     }}
                   />
+                  {errorPalabraSecreta && <div style={{ fontSize: 11, color: '#DC2626', marginTop: 4 }}>{errorPalabraSecreta}</div>}
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                   <button
                     type="button"
-                    onClick={() => setModificandoPalabraSecreta(false)}
+                    onClick={guardarPalabraSecreta}
                     style={{ flex: 1, background: '#2563EB', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 0', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
                   >
                     Guardar
                   </button>
                   <button
                     type="button"
-                    onClick={() => setModificandoPalabraSecreta(false)}
+                    onClick={cancelarPalabraSecreta}
                     style={{ flex: 1, background: '#fff', color: '#64748B', border: '1px solid #E2E8F0', borderRadius: 7, padding: '8px 0', fontSize: 12, cursor: 'pointer' }}
                   >
                     Cancelar
@@ -440,19 +666,19 @@ function ProfilePage() {
             <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, padding: '20px 24px', boxShadow: '0 1px 4px rgba(15,23,42,0.04)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                 <Zap size={15} color="#2563EB" strokeWidth={1.9} />
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: '#0F172A', margin: 0 }}>Plan Profesional</h3>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: '#0F172A', margin: 0 }}>{nombrePlan}</h3>
                 <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: '#2563EB', background: 'rgba(37,99,235,0.08)', borderRadius: 20, padding: '2px 8px' }}>
-                  $9/mes
+                  Activo
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: '#64748B' }}>Almacenamiento usado</span>
                 <span style={{ fontSize: 12, fontWeight: 600, color: '#0F172A' }}>
-                  {almacenamientoUsado} / {almacenamientoTotal} GB
+                  {almacenamientoUsado} / {almacenamientoTotal}
                 </span>
               </div>
               <div style={{ height: 7, background: '#F1F5F9', borderRadius: 4, overflow: 'hidden', marginBottom: 12 }}>
-                <div style={{ width: `${(almacenamientoUsado / almacenamientoTotal) * 100}%`, height: '100%', background: '#2563EB', borderRadius: 4 }} />
+                <div style={{ width: `${porcentajeUsado}%`, height: '100%', background: '#2563EB', borderRadius: 4 }} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                 {CATEGORIAS_ALMACENAMIENTO.map((categoria) => (

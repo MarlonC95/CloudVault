@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import ArchivosProvider from '../context/ArchivosProvider'
 import LoginPage from '../pages/LoginPage'
 import RegisterPage from '../pages/RegisterPage'
@@ -7,19 +7,32 @@ import DashboardPage from '../pages/DashboardPage'
 import PapeleraPage from '../pages/PapeleraPage'
 import ProfilePage from '../pages/ProfilePage'
 import PlanesPage from '../pages/PlanesPage'
+import { obtenerSesion } from '../services/authService'
+
+function RutaProtegida() {
+  return obtenerSesion() ? <Outlet /> : <Navigate to="/login" replace />
+}
+
+function RutaPublica() {
+  return obtenerSesion() ? <Navigate to="/dashboard" replace /> : <Outlet />
+}
 
 function AppRouter() {
   return (
     <BrowserRouter>
       <ArchivosProvider>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/registro" element={<RegisterPage />} />
-          <Route path="/recuperar" element={<RecoverPasswordPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/papelera" element={<PapeleraPage />} />
-          <Route path="/perfil" element={<ProfilePage />} />
-          <Route path="/planes" element={<PlanesPage />} />
+          <Route element={<RutaPublica />}>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/registro" element={<RegisterPage />} />
+            <Route path="/recuperar" element={<RecoverPasswordPage />} />
+          </Route>
+          <Route element={<RutaProtegida />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/papelera" element={<PapeleraPage />} />
+            <Route path="/perfil" element={<ProfilePage />} />
+            <Route path="/planes" element={<PlanesPage />} />
+          </Route>
           <Route path="/" element={<Navigate to="/login" replace />} />
         </Routes>
       </ArchivosProvider>

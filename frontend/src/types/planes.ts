@@ -10,11 +10,20 @@ export interface Plan {
   caracteristicas: string[]
 }
 
+export interface AlmacenamientoMiPlan {
+  usadoBytes: number
+  cuotaBytes: number | null
+  usadoLegible: string
+  cuotaLegible: string
+  libreLegible: string
+  porcentajeUsado: number
+}
+
 export interface MiPlan {
   plan: { id: string; nombre: string; tipoFacturacion: TipoFacturacion }
   estado: string
   renuevaEn: string
-  porcentajeUsado: number
+  almacenamiento: AlmacenamientoMiPlan
 }
 
 export interface Factura {
