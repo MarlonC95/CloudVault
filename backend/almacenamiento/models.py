@@ -95,4 +95,4 @@ class TrabajoMantenimiento(models.Model):
 
     class Meta:
         managed = False
-        db_table = '"public"."trabajos_mantenimiento"'
+        db_table = "trabajos_mantenimiento"  # sin esquema fijo: respeta el search_path (public o dev_pruebas)
