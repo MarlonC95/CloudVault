@@ -6,6 +6,7 @@ código a partir del id entero del seed, sin inventar columnas.
 """
 
 import calendar
+import secrets
 from datetime import timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 
@@ -161,4 +162,29 @@ def bloque_almacenamiento(usado, cuota):
         "cuota_legible": bytes_legibles(cuota),
         "libre_legible": bytes_legibles(libre),
         "porcentaje_usado": porcentaje,
+    }
+
+
+def token_aleatorio():
+    """Referencia de pago simulado."""
+    return secrets.token_hex(8)
+
+
+_ESTADO_PAGO_A_CLIENTE = {"COMPLETED": "pagada"}
+
+
+def factura_publica(pago):
+    """Representación de un pago del historial (§10.4)."""
+    suscripcion = pago.suscripcion
+    periodo_inicio = suscripcion.periodo_inicio if suscripcion else None
+    periodo_fin = suscripcion.periodo_fin if suscripcion else None
+    referencia = f"fac-{pago.fecha_pago.year}-{pago.fecha_pago.month:02d}"
+    return {
+        "id": referencia,
+        "monto": numero(pago.monto),
+        "moneda": "USD",
+        "estado": _ESTADO_PAGO_A_CLIENTE.get(pago.estado, pago.estado.lower()),
+        "periodo_inicio": fecha_iso(periodo_inicio),
+        "periodo_fin": fecha_iso(periodo_fin),
+        "url_pdf": f"https://cloudvault.app/facturas/{referencia}.pdf",
     }

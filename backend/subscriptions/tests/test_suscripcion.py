@@ -10,11 +10,12 @@ from common.testing import (
     espacio_de_trabajo,
 )
 from subscriptions import services
-from subscriptions.models import Suscripcion
+from subscriptions.models import HistorialPago, Suscripcion
 
 GB = 1024 ** 3
 MI_PLAN = "/api/v1/mi-plan/"
 SUSCRIBIR = "/api/v1/mi-plan/suscribir/"
+FACTURAS = "/api/v1/mi-plan/facturas/"
 
 
 def fijar_uso(organizacion_id, usado_bytes):
@@ -160,3 +161,41 @@ class SuscribirTests(TestCase):
         )
         self.assertEqual(respuesta.status_code, 401)
         self.assertEqual(respuesta.data["error"]["code"], "NO_AUTENTICADO")
+
+    def test_suscribir_registra_pago_simulado(self):
+        respuesta = self.suscribir("pro", "mensual")
+        self.assertEqual(respuesta.status_code, 200, respuesta.content)
+        suscripcion = Suscripcion.objects.get(organizacion_id=self.organizacion_id)
+        self.assertEqual(HistorialPago.objects.filter(suscripcion=suscripcion).count(), 1)
+        pago = HistorialPago.objects.get()
+        self.assertEqual(pago.estado, "COMPLETED")
+        self.assertEqual(int(pago.monto), 29)
+
+    def test_suscribir_anual_registra_monto_anual(self):
+        respuesta = self.suscribir("pro", "anual")
+        self.assertEqual(respuesta.status_code, 200, respuesta.content)
+        pago = HistorialPago.objects.get()
+        self.assertEqual(int(pago.monto), services.precio_anual(29))
+
+
+class FacturasTests(TestCase):
+    def setUp(self):
+        self.usuario_id, self.organizacion_id = espacio_de_trabajo()
+        self.client = cliente_autenticado(self.usuario_id)
+
+    def test_facturas_requiere_autenticacion(self):
+        respuesta = APIClient().get(FACTURAS)
+        self.assertEqual(respuesta.status_code, 401)
+        self.assertEqual(respuesta.data["error"]["code"], "NO_AUTENTICADO")
+
+    def test_facturas_lista_pagos_de_la_suscripcion(self):
+        self.client.post(SUSCRIBIR, {"plan_id": "pro", "tipo_facturacion": "mensual"}, format="json")
+        respuesta = self.client.get(FACTURAS)
+        self.assertEqual(respuesta.status_code, 200, respuesta.content)
+        data = respuesta.data["data"]
+        self.assertEqual(data["count"], 1)
+        factura = data["results"][0]
+        self.assertEqual(factura["monto"], 29)
+        self.assertEqual(factura["moneda"], "USD")
+        self.assertEqual(factura["estado"], "pagada")
+        self.assertTrue(factura["url_pdf"].startswith("https://cloudvault.app/facturas/"))

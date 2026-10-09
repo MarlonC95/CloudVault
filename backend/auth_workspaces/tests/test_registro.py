@@ -8,10 +8,12 @@ from django.contrib.auth.hashers import check_password, make_password
 from django.core.cache import cache
 from django.db import IntegrityError, OperationalError, close_old_connections
 from django.test import TestCase, TransactionTestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from auth_workspaces.models import LogAuditoria, Usuario
 from auth_workspaces.services import registrar_usuario
+from subscriptions.models import MiembroOrganizacion, Organizacion, Suscripcion
 
 
 URL = "/api/v1/auth/registro/"
@@ -146,6 +148,21 @@ class RegistroTests(TestCase):
         self.assertIn(URL, response.json()["paths"])
         docs = self.client.get("/api/docs/")
         self.assertEqual(docs.status_code, 200)
+
+    def test_registro_crea_organizacion_membresia_y_suscripcion(self):
+        response = self.client.post(URL, payload(), format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        user = Usuario.objects.get()
+        self.assertEqual(Organizacion.objects.count(), 1)
+        organizacion = Organizacion.objects.get()
+        self.assertTrue(organizacion.slug.startswith("workspace-ana-perez-"))
+        self.assertEqual(MiembroOrganizacion.objects.count(), 1)
+        self.assertEqual(MiembroOrganizacion.objects.get().nivel_rol, 0)
+        suscripcion = Suscripcion.objects.get()
+        self.assertEqual(suscripcion.plan_id, 1)
+        self.assertEqual(suscripcion.estado, "ACTIVE")
+        self.assertEqual(suscripcion.intervalo, "MONTHLY")
+        self.assertGreater(suscripcion.periodo_fin.year, timezone.now().year + 9)
 
 
 class RegistroConcurrenteTests(TransactionTestCase):

@@ -6,6 +6,8 @@ from django.contrib.auth.hashers import make_password
 from django.db import IntegrityError, transaction
 from rest_framework.exceptions import APIException
 
+from subscriptions.espacio import asegurar_espacio_personal
+
 from .models import LogAuditoria, Usuario
 
 
@@ -42,6 +44,7 @@ def registrar_usuario(datos, remote_addr=None):
                 ip_origen=ip,
                 detalles={},
             )
+            asegurar_espacio_personal(usuario.id)
     except IntegrityError as exc:
         cause = getattr(exc, "__cause__", None)
         constraint = getattr(getattr(cause, "diag", None), "constraint_name", None)

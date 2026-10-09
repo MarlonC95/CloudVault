@@ -1,4 +1,4 @@
-"""Endpoints de suscripciones (§10.1-§10.3) sobre el esquema SQL compartido.
+"""Endpoints de suscripciones (§10.1-§10.4) sobre el esquema SQL real.
 
 La suscripción pertenece a la organización; el ámbito se resuelve con
 ``resolver_organizacion`` y solo el propietario (nivel_rol 0) puede contratar.
@@ -18,7 +18,7 @@ from common.responses import fail, ok
 
 from . import services
 from .cuotas import SinSuscripcionVigente, leer_cuota_organizacion
-from .models import Organizacion, Plan, Suscripcion
+from .models import HistorialPago, Organizacion, Plan, Suscripcion
 
 
 class PlanesView(ContratoAPIMixin, APIView):
@@ -62,7 +62,7 @@ class MiPlanView(ContratoAPIMixin, APIView):
         suscripcion = (
             Suscripcion.objects.select_related("plan")
             .filter(organizacion_id=ambito.organizacion_id, estado=Suscripcion.ESTADO_ACTIVE)
-            .order_by("-creado_en")
+            .order_by("-periodo_inicio")
             .first()
         )
         plan = suscripcion.plan
@@ -135,7 +135,7 @@ class SuscribirView(ContratoAPIMixin, APIView):
             Suscripcion.objects.filter(
                 organizacion_id=ambito.organizacion_id, estado=Suscripcion.ESTADO_ACTIVE
             )
-            .order_by("-creado_en")
+            .order_by("-periodo_inicio")
             .first()
         )
         if suscripcion is None:
@@ -145,7 +145,17 @@ class SuscribirView(ContratoAPIMixin, APIView):
         suscripcion.intervalo = intervalo
         suscripcion.periodo_inicio = ahora
         suscripcion.periodo_fin = services.sumar_meses(ahora, meses)
+        suscripcion.auto_renovar = True
         suscripcion.save()
+
+        monto = services.precio_anual(plan.precio) if intervalo == Suscripcion.INTERVALO_ANUAL else plan.precio
+        HistorialPago.objects.create(
+            suscripcion=suscripcion,
+            monto=monto,
+            estado="COMPLETED",
+            referencia_transaccion=f"sim-{services.token_aleatorio()}",
+            fecha_pago=ahora,
+        )
 
         return ok({
             "plan": {
@@ -156,3 +166,39 @@ class SuscribirView(ContratoAPIMixin, APIView):
             "estado": suscripcion.estado,
             "renueva_en": services.fecha_iso(suscripcion.periodo_fin),
         })
+
+
+class FacturasView(ContratoAPIMixin, APIView):
+    """§10.4 — Historial de pagos de la suscripción activa."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={200: OpenApiResponse(description="Historial paginado de pagos.")},
+        tags=["Suscripciones"],
+    )
+    def get(self, request):
+        ambito = resolver_organizacion(
+            request.user, request.query_params.get("organizacion_id")
+        )
+        suscripcion = (
+            Suscripcion.objects.filter(
+                organizacion_id=ambito.organizacion_id, estado=Suscripcion.ESTADO_ACTIVE
+            )
+            .order_by("-periodo_inicio")
+            .values_list("id", flat=True)
+            .first()
+        )
+        if suscripcion is None:
+            return fail("CONTEXT_NOT_READY", status=409)
+
+        pagos = (
+            HistorialPago.objects.filter(suscripcion_id=suscripcion)
+            .select_related("suscripcion")
+            .order_by("-fecha_pago")
+        )
+        paginador = EnvelopePagination()
+        pagina = paginador.paginate_queryset(pagos, request)
+        return paginador.get_paginated_response(
+            [services.factura_publica(pago) for pago in pagina]
+        )

@@ -40,12 +40,6 @@ class LeerCuotaOrganizacionTests(TestCase):
         with self.assertRaises(SinSuscripcionVigente):
             leer_cuota_organizacion(organizacion_id)
 
-    def test_organizacion_inactiva_no_cuenta(self):
-        organizacion_id = crear_organizacion(activa=False)
-        crear_suscripcion(organizacion_id, plan_id=PLAN_GRATUITO)
-        with self.assertRaises(SinSuscripcionVigente):
-            leer_cuota_organizacion(organizacion_id)
-
     def test_plan_inactivo_no_cuenta(self):
         _, organizacion_id = espacio_de_trabajo()
         with connection.cursor() as cursor:

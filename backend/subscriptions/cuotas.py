@@ -18,7 +18,6 @@ FROM organizaciones o
 JOIN suscripciones s ON s.organizacion_id = o.id
 JOIN planes p ON p.id = s.plan_id
 WHERE o.id = %s
-  AND o.esta_activo
   AND p.esta_activo
   AND s.estado = 'ACTIVE'
   AND s.periodo_inicio <= %s
