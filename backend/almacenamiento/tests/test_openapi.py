@@ -130,6 +130,8 @@ class OpenAPIContratoTests(SimpleTestCase):
         self.assertEqual(set(installed["paths"]), {
             "/api/v1/auth/registro/", "/api/v1/auth/login/",
             "/api/v1/auth/recuperar-contrasena/",
+            "/api/v1/auth/refresh/", "/api/v1/auth/logout/", "/api/v1/auth/perfil/",
+            "/api/v1/auth/cambiar-contrasena/",
             "/api/v1/archivos/iniciar-carga/",
             "/api/v1/archivos/{id}/confirmar-carga/",
             "/api/v1/archivos/{id}/descarga/",

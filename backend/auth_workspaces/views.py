@@ -15,9 +15,6 @@ from rest_framework.views import APIView
 from common.ambito import resolver_organizacion
 from common.errores import ContratoAPIMixin
 from common.responses import fail, ok
-from subscriptions import services as subscription_services
-from subscriptions.cuotas import SinSuscripcionVigente, leer_cuota_organizacion
-from subscriptions.models import MiembroOrganizacion, Suscripcion
 
 from .exceptions import ServiceUnavailable
 from .login import iniciar_sesion
@@ -51,6 +48,11 @@ _ROL_A_TEXTO = {0: "admin", 1: "lector", 2: "operativo", 3: "avanzado"}
 
 
 def _perfil_publico(usuario, ambito):
+    # Imports diferidos: auth no debe cargar subscriptions al importarse (config.urls importa este módulo).
+    from subscriptions import services as subscription_services
+    from subscriptions.cuotas import SinSuscripcionVigente, leer_cuota_organizacion
+    from subscriptions.models import Suscripcion
+
     plan = None
     almacenamiento = {
         "usado_bytes": 0,
