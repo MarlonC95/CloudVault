@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Check, ChevronRight, Clock, Folder, HardDrive, RotateCcw, Trash2 } from 'lucide-react'
 import { useArchivos } from '../context/archivosContexto'
+import { convertirEnErrorApi } from '../services/errorApi'
 import { obtenerConfiguracionTipoArchivo } from '../utils/tiposArchivo'
 import {
   DIAS_RETENCION_PAPELERA,
-  calcularDiasRestantes,
   calcularTamanoTotalLegible,
   formatearFechaEliminacion,
   obtenerColoresDiasRestantes,
@@ -70,20 +70,22 @@ function Casilla({ marcada, color, onCambiar, etiqueta }: CasillaProps) {
 
 function PapeleraPage() {
   const navegar = useNavigate()
-  const { archivos, carpetas, restaurarArchivos, eliminarDefinitivamente } = useArchivos()
+  const { papelera, carpetas, cargando, error, refrescar, restaurarArchivos, eliminarDefinitivamente } = useArchivos()
 
   const [idsSeleccionados, setIdsSeleccionados] = useState<string[]>([])
   const [idsPorEliminar, setIdsPorEliminar] = useState<string[] | null>(null)
   const [idFilaResaltada, setIdFilaResaltada] = useState<string | null>(null)
+  const [errorAccion, setErrorAccion] = useState<string | null>(null)
+  const [procesando, setProcesando] = useState(false)
 
-  const archivosEnPapelera = archivos.filter((archivo) => archivo.enPapelera)
+  const archivosEnPapelera = papelera
   const seleccionados = idsSeleccionados.filter((id) => archivosEnPapelera.some((archivo) => archivo.id === id))
   const estanTodosSeleccionados = archivosEnPapelera.length > 0 && seleccionados.length === archivosEnPapelera.length
   const papeleraVacia = archivosEnPapelera.length === 0
 
   const diasHastaPrimerVencimiento = papeleraVacia
     ? null
-    : Math.min(...archivosEnPapelera.map((archivo) => calcularDiasRestantes(archivo.eliminadoEn)))
+    : Math.min(...archivosEnPapelera.map((archivo) => archivo.diasRestantes))
 
   const tarjetasResumen = [
     {
@@ -116,16 +118,26 @@ function PapeleraPage() {
     setIdsSeleccionados(estanTodosSeleccionados ? [] : archivosEnPapelera.map((archivo) => archivo.id))
   }
 
-  function restaurar(ids: string[]) {
-    restaurarArchivos(ids)
-    setIdsSeleccionados((anteriores) => anteriores.filter((id) => !ids.includes(id)))
+  async function restaurar(ids: string[]) {
+    setProcesando(true)
+    setErrorAccion(null)
+    try {
+      await restaurarArchivos(ids)
+      setIdsSeleccionados((anteriores) => anteriores.filter((id) => !ids.includes(id)))
+    } catch (causa) { setErrorAccion(convertirEnErrorApi(causa).message) }
+    finally { setProcesando(false) }
   }
 
-  function confirmarEliminacion() {
+  async function confirmarEliminacion() {
     if (!idsPorEliminar) return
-    eliminarDefinitivamente(idsPorEliminar)
-    setIdsSeleccionados((anteriores) => anteriores.filter((id) => !idsPorEliminar.includes(id)))
-    setIdsPorEliminar(null)
+    setProcesando(true)
+    setErrorAccion(null)
+    try {
+      await eliminarDefinitivamente(idsPorEliminar)
+      setIdsSeleccionados((anteriores) => anteriores.filter((id) => !idsPorEliminar.includes(id)))
+      setIdsPorEliminar(null)
+    } catch (causa) { setErrorAccion(convertirEnErrorApi(causa).message) }
+    finally { setProcesando(false) }
   }
 
   function obtenerNombreUbicacion(carpetaId: string | null): string {
@@ -135,6 +147,8 @@ function PapeleraPage() {
   return (
     <DashboardLayout seccionActiva="papelera">
       <div style={{ padding: 32 }}>
+        {cargando && <div role="status" style={{ color: '#64748B', fontSize: 13 }}>Cargando papelera...</div>}
+        {(error || errorAccion) && <div role="alert" style={{ color: COLOR_PELIGRO, fontSize: 13 }}>{errorAccion || error} <button type="button" onClick={() => { setErrorAccion(null); void refrescar().catch(() => undefined) }}>Reintentar</button></div>}
         {/* Encabezado */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
@@ -146,7 +160,7 @@ function PapeleraPage() {
 
           <button
             type="button"
-            disabled={papeleraVacia}
+            disabled={papeleraVacia || procesando}
             onClick={() => setIdsPorEliminar(archivosEnPapelera.map((archivo) => archivo.id))}
             style={{
               display: 'flex',
@@ -234,7 +248,8 @@ function PapeleraPage() {
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
               <button
                 type="button"
-                onClick={() => restaurar(seleccionados)}
+                onClick={() => { void restaurar(seleccionados) }}
+                disabled={procesando}
                 style={{ ...ESTILO_BOTON_BARRA, background: '#fff', border: '1px solid #E2E8F0', color: COLOR_MARCA }}
               >
                 <RotateCcw size={13} strokeWidth={2} />
@@ -275,7 +290,8 @@ function PapeleraPage() {
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
               <button
                 type="button"
-                onClick={confirmarEliminacion}
+                onClick={() => { void confirmarEliminacion() }}
+                disabled={procesando}
                 style={{
                   background: COLOR_PELIGRO,
                   color: '#fff',
@@ -370,7 +386,7 @@ function PapeleraPage() {
 
             {archivosEnPapelera.map((archivo, indice) => {
               const estaSeleccionado = seleccionados.includes(archivo.id)
-              const diasRestantes = calcularDiasRestantes(archivo.eliminadoEn)
+              const diasRestantes = archivo.diasRestantes
               const coloresDias = obtenerColoresDiasRestantes(diasRestantes)
               const configuracion = obtenerConfiguracionTipoArchivo(archivo.tipo)
               const Icono = configuracion.Icono
@@ -451,7 +467,8 @@ function PapeleraPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <button
                       type="button"
-                      onClick={() => restaurar([archivo.id])}
+                      onClick={() => { void restaurar([archivo.id]) }}
+                      disabled={procesando}
                       style={{
                         display: 'flex',
                         alignItems: 'center',

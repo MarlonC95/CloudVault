@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ChevronLeft, Folder as FolderIcon } from 'lucide-react'
-import { CARGAS_EJEMPLO } from '../data/datosEjemplo'
 import { useArchivos } from '../context/archivosContexto'
-import { cumpleRangoFecha, cumpleRangoTamano } from '../utils/filtrosArchivos'
-import { obtenerTipoArchivoPorNombre, formatearTamanoBytes } from '../utils/formatoArchivo'
-import { obtenerSesion } from '../services/authService'
+import { subirArchivo, obtenerUrlDescarga } from '../services/archivosService'
+import { convertirEnErrorApi, obtenerMensajeDeCampo } from '../services/errorApi'
+import { formatearTamanoBytes } from '../utils/formatoArchivo'
 import type { RangoFecha, RangoTamano } from '../utils/filtrosArchivos'
-import type { Archivo, TipoArchivo } from '../types/archivo'
+import type { Archivo, CargaEnProgreso, TipoArchivo } from '../types/archivo'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import BuscadorArchivos from '../components/dashboard/BuscadorArchivos'
 import TarjetaCarpeta from '../components/dashboard/TarjetaCarpeta'
@@ -29,7 +28,7 @@ interface EstadoNavegacionDashboard {
 function DashboardPage() {
   const navegar = useNavigate()
   const ubicacion = useLocation()
-  const { carpetas, archivos, agregarArchivos, crearCarpeta, moverArchivo, enviarAPapelera } = useArchivos()
+  const { carpetas, archivos, cargando, error, refrescar, crearCarpeta, moverArchivo, enviarAPapelera } = useArchivos()
 
   // El botón "Subir Archivo" del menú, desde otras pantallas, nos trae aquí con la ventana de subida pedida.
   const debeAbrirSubida = (ubicacion.state as EstadoNavegacionDashboard | null)?.abrirSubida === true
@@ -44,9 +43,9 @@ function DashboardPage() {
   const [archivoParaMover, setArchivoParaMover] = useState<Archivo | null>(null)
   const [mostrarModalSubida, setMostrarModalSubida] = useState(debeAbrirSubida)
   const [mostrarModalNuevaCarpeta, setMostrarModalNuevaCarpeta] = useState(false)
-  const [cargas] = useState(CARGAS_EJEMPLO)
-
-  const usuario = obtenerSesion()?.usuario
+  const [cargas, setCargas] = useState<CargaEnProgreso[]>([])
+  const [errorAccion, setErrorAccion] = useState<string | null>(null)
+  const [ahora] = useState(() => Date.now())
 
   useEffect(() => {
     // Limpiamos el aviso para que la ventana no se reabra al recargar o volver atrás
@@ -55,10 +54,6 @@ function DashboardPage() {
     }
   }, [debeAbrirSubida, navegar, ubicacion.pathname])
 
-  function contarArchivosDeCarpeta(carpetaId: string) {
-    return archivos.filter((archivo) => archivo.carpetaId === carpetaId && !archivo.enPapelera).length
-  }
-
   const carpetaActiva = carpetas.find((carpeta) => carpeta.id === carpetaActivaId) ?? null
 
   const archivosFiltrados = archivos
@@ -66,60 +61,83 @@ function DashboardPage() {
     .filter((archivo) => carpetaActivaId === null || archivo.carpetaId === carpetaActivaId)
     .filter((archivo) => archivo.nombre.toLowerCase().includes(busqueda.toLowerCase()))
     .filter((archivo) => filtroTipo === 'todos' || archivo.tipo === filtroTipo)
-    .filter((archivo) => cumpleRangoFecha(archivo.fechaModificacion, filtroFecha))
-    .filter((archivo) => cumpleRangoTamano(archivo.tamano, filtroTamano))
+    .filter((archivo) => {
+      if (filtroFecha === 'cualquiera') return true
+      const fecha = new Date(archivo.fechaModificacionIso).getTime()
+      if (filtroFecha === 'recientes') return fecha >= ahora - 7 * 86400000
+      if (filtroFecha === 'este-mes') return new Date(archivo.fechaModificacionIso).getMonth() === new Date(ahora).getMonth()
+        && new Date(archivo.fechaModificacionIso).getFullYear() === new Date(ahora).getFullYear()
+      return fecha < ahora - 30 * 86400000
+    })
+    .filter((archivo) => {
+      if (filtroTamano === 'cualquiera') return true
+      const mb = archivo.tamanoBytes / (1024 * 1024)
+      return filtroTamano === 'pequeno' ? mb < 1 : filtroTamano === 'mediano' ? mb >= 1 && mb < 100 : mb >= 100
+    })
 
-  function manejarDescargar(archivo: Archivo) {
-    // TODO(backend): reemplazar por la descarga real desde la URL prefirmada de S3/MinIO
-    const contenido = `Archivo de ejemplo generado por CloudVault.\n\nNombre: ${archivo.nombre}\nTamaño reportado: ${archivo.tamano}`
-    const blob = new Blob([contenido], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const enlace = document.createElement('a')
-    enlace.href = url
-    enlace.download = archivo.nombre
-    enlace.click()
-    URL.revokeObjectURL(url)
+  async function manejarDescargar(archivo: Archivo) {
+    try {
+      setErrorAccion(null)
+      const descarga = await obtenerUrlDescarga(archivo.id)
+      if (!descarga.url) throw new Error('La API no devolvió una URL de descarga.')
+      const enlace = document.createElement('a')
+      enlace.href = descarga.url
+      enlace.download = descarga.nombre ?? archivo.nombre
+      document.body.appendChild(enlace)
+      enlace.click()
+      enlace.remove()
+    } catch (causa) { setErrorAccion(causa instanceof Error && causa.message.startsWith('La API') ? causa.message : convertirEnErrorApi(causa).message) }
   }
 
-  function manejarEliminar(archivo: Archivo) {
-    enviarAPapelera(archivo.id)
-    if (archivoSeleccionado?.id === archivo.id) {
-      setArchivoSeleccionado(null)
+  async function manejarEliminar(archivo: Archivo) {
+    try {
+      await enviarAPapelera(archivo.id)
+      if (archivoSeleccionado?.id === archivo.id) setArchivoSeleccionado(null)
+    } catch (causa) { setErrorAccion(convertirEnErrorApi(causa).message) }
+  }
+
+  async function manejarMover(archivo: Archivo, nuevaCarpetaId: string | null) {
+    try {
+      await moverArchivo(archivo.id, nuevaCarpetaId)
+      setArchivoParaMover(null)
+    } catch (causa) { setErrorAccion(convertirEnErrorApi(causa).message); throw causa }
+  }
+
+  async function manejarCrearCarpeta(nombre: string) {
+    try {
+      await crearCarpeta(nombre)
+      setMostrarModalNuevaCarpeta(false)
+    } catch (causa) {
+      const errorApi = convertirEnErrorApi(causa)
+      setErrorAccion(obtenerMensajeDeCampo(errorApi, 'nombre') ?? errorApi.message)
+      throw causa
     }
   }
 
-  function manejarMover(archivo: Archivo, nuevaCarpetaId: string | null) {
-    moverArchivo(archivo.id, nuevaCarpetaId)
-    setArchivoParaMover(null)
-  }
-
-  function manejarCrearCarpeta(nombre: string) {
-    crearCarpeta(nombre)
-    setMostrarModalNuevaCarpeta(false)
-  }
-
   function manejarConfirmarSubida(archivosSubidos: File[]) {
-    // TODO(backend): reemplazar por la subida real a la API (POST /api/archivos/ con URL prefirmada de S3/MinIO)
-    const nuevosArchivos: Archivo[] = archivosSubidos.map((archivo, indice) => ({
-      id: `subido-${Date.now()}-${indice}`,
-      nombre: archivo.name,
-      tipo: obtenerTipoArchivoPorNombre(archivo.name),
-      fechaModificacion: 'Justo ahora',
-      tamano: formatearTamanoBytes(archivo.size),
-      propietario: usuario?.nombreCompleto ?? 'Usuario',
-      cifrado: false,
-      esNuevo: true,
-      carpetaId: carpetaActivaId,
-      enPapelera: false,
-    }))
-
-    agregarArchivos(nuevosArchivos)
+    const entradas = archivosSubidos.map((archivo) => ({ archivo, id: crypto.randomUUID() }))
+    setCargas((anteriores) => [...anteriores, ...entradas.map(({ archivo, id }) => ({ id, nombreArchivo: archivo.name, tamano: formatearTamanoBytes(archivo.size), progreso: 0, estado: 'en-cola' as const }))])
     setMostrarModalSubida(false)
+    void (async () => {
+      for (const { archivo, id } of entradas) {
+        setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, estado: 'subiendo' } : carga))
+        try {
+          await subirArchivo(archivo, carpetaActivaId, (progreso) => setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, progreso } : carga)))
+          setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, progreso: 100, estado: 'completado' } : carga))
+          await refrescar()
+        } catch (causa) {
+          const mensajeError = convertirEnErrorApi(causa).message
+          setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, estado: 'error', mensajeError } : carga))
+        }
+      }
+    })()
   }
 
   return (
     <DashboardLayout seccionActiva="mi-unidad" onClickSubirArchivo={() => setMostrarModalSubida(true)}>
       <div style={{ flex: 1, padding: 28, display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
+        {cargando && <div role="status" style={{ color: '#64748B', fontSize: 13 }}>Cargando archivos y carpetas...</div>}
+        {(error || errorAccion) && <div role="alert" style={{ color: '#DC2626', fontSize: 13 }}>{errorAccion || error} <button type="button" onClick={() => { setErrorAccion(null); void refrescar().catch(() => undefined) }}>Reintentar</button></div>}
         <BuscadorArchivos
           valorBusqueda={busqueda}
           onCambiarBusqueda={setBusqueda}
@@ -166,7 +184,7 @@ function DashboardPage() {
                     <TarjetaCarpeta
                       key={carpeta.id}
                       carpeta={carpeta}
-                      cantidadArchivos={contarArchivosDeCarpeta(carpeta.id)}
+                      cantidadArchivos={carpeta.cantidadArchivos}
                       estaActiva={carpeta.id === carpetaActivaId}
                       onClick={() => setCarpetaActivaId(carpeta.id)}
                     />
@@ -198,7 +216,7 @@ function DashboardPage() {
         </div>
       </div>
 
-      <NotificacionCargas cargas={cargas} />
+      <NotificacionCargas cargas={cargas} onDescartar={(id) => setCargas((anteriores) => anteriores.filter((carga) => carga.id !== id))} />
 
       <ModalSubirArchivo
         visible={mostrarModalSubida}

@@ -10,6 +10,7 @@ interface CarpetaApi {
   color_fondo?: string
   cantidad_archivos?: number
   creado_en?: string
+  padre_id?: string | null
 }
 
 /** Colores que usamos si el backend no manda los de una carpeta recién creada. */
@@ -27,6 +28,7 @@ function mapearCarpeta(carpeta: CarpetaApi): CarpetaConConteo {
     color: carpeta.color ?? COLOR_CARPETA_PREDETERMINADO,
     colorFondo: carpeta.color_fondo ?? COLOR_FONDO_CARPETA_PREDETERMINADO,
     cantidadArchivos: carpeta.cantidad_archivos ?? 0,
+    padreId: carpeta.padre_id ?? null,
   }
 }
 

@@ -6,6 +6,7 @@ export interface ArchivoEnPapelera {
   nombre: string
   tipo: TipoArchivo
   tamano: string
+  carpetaId: string | null
   eliminadoEn: string
   expiraEn: string
   diasRestantes: number

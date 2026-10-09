@@ -1,16 +1,31 @@
+import { useState } from 'react'
 import { Folder, FolderX, X, Check } from 'lucide-react'
 import { COLOR_MARCA } from '../../theme/colores'
+import { convertirEnErrorApi, obtenerMensajeDeCampo } from '../../services/errorApi'
 import type { Archivo, Carpeta } from '../../types/archivo'
 
 interface ModalMoverArchivoProps {
   archivo: Archivo | null
   carpetas: Carpeta[]
   onCerrar: () => void
-  onMover: (archivo: Archivo, carpetaId: string | null) => void
+  onMover: (archivo: Archivo, carpetaId: string | null) => Promise<void>
 }
 
 function ModalMoverArchivo({ archivo, carpetas, onCerrar, onMover }: ModalMoverArchivoProps) {
+  const [error, setError] = useState<string | null>(null)
+  const [moviendo, setMoviendo] = useState(false)
   if (!archivo) return null
+
+  async function mover(carpetaId: string | null) {
+    if (!archivo || moviendo) return
+    setMoviendo(true)
+    setError(null)
+    try { await onMover(archivo, carpetaId) }
+    catch (causa) {
+      const errorApi = convertirEnErrorApi(causa)
+      setError(obtenerMensajeDeCampo(errorApi, 'carpeta_id') ?? errorApi.message)
+    } finally { setMoviendo(false) }
+  }
 
   return (
     <div
@@ -33,11 +48,13 @@ function ModalMoverArchivo({ archivo, carpetas, onCerrar, onMover }: ModalMoverA
         <p className="text-secondary small mb-3">
           Elige dónde quieres guardar <strong>{archivo.nombre}</strong>.
         </p>
+        {error && <p role="alert" className="small text-danger">{error}</p>}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <button
             type="button"
-            onClick={() => onMover(archivo, null)}
+            onClick={() => { void mover(null) }}
+            disabled={moviendo}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -59,7 +76,8 @@ function ModalMoverArchivo({ archivo, carpetas, onCerrar, onMover }: ModalMoverA
             <button
               key={carpeta.id}
               type="button"
-              onClick={() => onMover(archivo, carpeta.id)}
+              onClick={() => { void mover(carpeta.id) }}
+              disabled={moviendo}
               style={{
                 display: 'flex',
                 alignItems: 'center',

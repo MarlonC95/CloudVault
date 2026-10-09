@@ -13,7 +13,7 @@ function ModalCompartir({ archivo, onCerrar }: ModalCompartirProps) {
 
   if (!archivo) return null
 
-  // TODO(backend): reemplazar por la llamada real a POST /api/v1/enlaces-compartidos/ (ver enlacesService.ts)
+  // La creación de enlaces seguirá local hasta que exista la ruta de enlaces compartidos.
   const enlaceSimulado = `https://cloudvault.app/compartido/${archivo.id}`
 
   async function copiarEnlace() {

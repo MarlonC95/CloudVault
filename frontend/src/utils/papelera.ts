@@ -1,4 +1,3 @@
-import type { Archivo } from '../types/archivo'
 import { parsearTamanoAMb } from './filtrosArchivos'
 import { formatearFechaCorta } from './fechas'
 import { formatearTamanoBytes } from './formatoArchivo'
@@ -20,7 +19,7 @@ export function formatearFechaEliminacion(eliminadoEn?: string): string {
 }
 
 /** Suma el tamaño de varios archivos y lo devuelve legible, por ejemplo "1.5 GB". */
-export function calcularTamanoTotalLegible(archivos: Archivo[]): string {
+export function calcularTamanoTotalLegible(archivos: { tamano: string }[]): string {
   const totalMb = archivos.reduce((suma, archivo) => suma + parsearTamanoAMb(archivo.tamano), 0)
   if (totalMb === 0) return '0 MB'
   return formatearTamanoBytes(totalMb * 1024 * 1024)

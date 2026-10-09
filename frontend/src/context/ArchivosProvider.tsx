@@ -1,91 +1,75 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ARCHIVOS_EJEMPLO, CARPETAS_EJEMPLO } from '../data/datosEjemplo'
-import { calcularDiasRestantes } from '../utils/papelera'
 import type { Archivo, Carpeta } from '../types/archivo'
+import type { ArchivoEnPapelera } from '../types/papelera'
+import { listarArchivos, moverArchivo as moverArchivoApi, enviarArchivoAPapelera, renombrarArchivo as renombrarArchivoApi } from '../services/archivosService'
+import { listarCarpetas, crearCarpeta as crearCarpetaApi, actualizarCarpeta } from '../services/carpetasService'
+import { listarPapelera, restaurarArchivoDePapelera, eliminarDefinitivamenteDePapelera } from '../services/papeleraService'
+import { convertirEnErrorApi } from '../services/errorApi'
 import { ArchivosContexto } from './archivosContexto'
 import type { ArchivosContextoValor } from './archivosContexto'
 
-const COLORES_CARPETA_NUEVA = [
-  { color: '#DB2777', colorFondo: '#FDF2F8' },
-  { color: '#CA8A04', colorFondo: '#FEFCE8' },
-  { color: '#059669', colorFondo: '#ECFDF5' },
-]
+interface ArchivosProviderProps { children: ReactNode }
 
-function archivoSigueVigente(archivo: Archivo): boolean {
-  // TODO(backend): el borrado automático a los 30 días lo hará el servidor, no el frontend
-  return !archivo.enPapelera || calcularDiasRestantes(archivo.eliminadoEn) > 0
+async function obtenerTodasLasPaginas<T>(listar: (pagina: number) => Promise<{ resultados: T[]; urlSiguiente: string | null }>): Promise<T[]> {
+  const elementos: T[] = []
+  for (let pagina = 1; ; pagina += 1) {
+    const respuesta = await listar(pagina)
+    elementos.push(...respuesta.resultados)
+    if (!respuesta.urlSiguiente) return elementos
+  }
 }
 
-interface ArchivosProviderProps {
-  children: ReactNode
-}
-
-/**
- * Guarda las carpetas y los archivos del usuario en un solo lugar para que
- * "Mi Unidad" y "Papelera" vean siempre los mismos datos.
- */
 function ArchivosProvider({ children }: ArchivosProviderProps) {
-  const [carpetas, setCarpetas] = useState<Carpeta[]>(CARPETAS_EJEMPLO)
-  const [archivos, setArchivos] = useState<Archivo[]>(() => ARCHIVOS_EJEMPLO.filter(archivoSigueVigente))
+  const [carpetas, setCarpetas] = useState<Carpeta[]>([])
+  const [archivos, setArchivos] = useState<Archivo[]>([])
+  const [papelera, setPapelera] = useState<ArchivoEnPapelera[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  function agregarArchivos(nuevosArchivos: Archivo[]) {
-    // TODO(backend): reemplazar por POST /api/archivos/
-    setArchivos((anteriores) => [...nuevosArchivos, ...anteriores])
-  }
-
-  function crearCarpeta(nombre: string) {
-    // TODO(backend): reemplazar por POST /api/carpetas/
-    const paleta = COLORES_CARPETA_NUEVA[carpetas.length % COLORES_CARPETA_NUEVA.length]
-    const nuevaCarpeta: Carpeta = {
-      id: `carpeta-${Date.now()}`,
-      nombre,
-      color: paleta.color,
-      colorFondo: paleta.colorFondo,
+  const refrescar = useCallback(async () => {
+    setCargando(true)
+    setError(null)
+    try {
+      const [nuevasCarpetas, nuevosArchivos, nuevaPapelera] = await Promise.all([
+        obtenerTodasLasPaginas(listarCarpetas),
+        obtenerTodasLasPaginas((pagina) => listarArchivos({ pagina })),
+        obtenerTodasLasPaginas(listarPapelera),
+      ])
+      setCarpetas(nuevasCarpetas)
+      setArchivos(nuevosArchivos)
+      setPapelera(nuevaPapelera)
+    } catch (causa) {
+      setError(convertirEnErrorApi(causa).message)
+      throw causa
+    } finally {
+      setCargando(false)
     }
-    setCarpetas((anteriores) => [...anteriores, nuevaCarpeta])
-  }
+  }, [])
 
-  function moverArchivo(archivoId: string, carpetaId: string | null) {
-    // TODO(backend): reemplazar por PATCH /api/archivos/{id}/
-    setArchivos((anteriores) =>
-      anteriores.map((archivo) => (archivo.id === archivoId ? { ...archivo, carpetaId } : archivo))
-    )
-  }
+  useEffect(() => { void Promise.resolve().then(refrescar).catch(() => undefined) }, [refrescar])
 
-  function enviarAPapelera(archivoId: string) {
-    // TODO(backend): reemplazar por DELETE /api/archivos/{id}/ (borrado lógico)
-    const ahora = new Date().toISOString()
-    setArchivos((anteriores) =>
-      anteriores.map((archivo) =>
-        archivo.id === archivoId ? { ...archivo, enPapelera: true, eliminadoEn: ahora } : archivo
-      )
-    )
-  }
-
-  function restaurarArchivos(archivoIds: string[]) {
-    // TODO(backend): reemplazar por POST /api/papelera/restaurar/
-    setArchivos((anteriores) =>
-      anteriores.map((archivo) =>
-        archivoIds.includes(archivo.id) ? { ...archivo, enPapelera: false, eliminadoEn: undefined } : archivo
-      )
-    )
-  }
-
-  function eliminarDefinitivamente(archivoIds: string[]) {
-    // TODO(backend): reemplazar por DELETE /api/papelera/{id}/
-    setArchivos((anteriores) => anteriores.filter((archivo) => !archivoIds.includes(archivo.id)))
+  async function mutar(accion: () => Promise<unknown>): Promise<void> {
+    setError(null)
+    try {
+      await accion()
+    } catch (causa) {
+      try { await refrescar() } catch { /* Se conserva el error original de la operación. */ }
+      setError(convertirEnErrorApi(causa).message)
+      throw causa
+    }
+    await refrescar()
   }
 
   const valor: ArchivosContextoValor = {
-    carpetas,
-    archivos,
-    agregarArchivos,
-    crearCarpeta,
-    moverArchivo,
-    enviarAPapelera,
-    restaurarArchivos,
-    eliminarDefinitivamente,
+    carpetas, archivos, papelera, cargando, error, refrescar,
+    crearCarpeta: (nombre) => mutar(() => crearCarpetaApi(nombre)),
+    renombrarCarpeta: (id, nombre) => mutar(() => actualizarCarpeta(id, { nombre })),
+    renombrarArchivo: (id, nombre) => mutar(() => renombrarArchivoApi(id, nombre)),
+    moverArchivo: (id, carpetaId) => mutar(() => moverArchivoApi(id, carpetaId)),
+    enviarAPapelera: (id) => mutar(() => enviarArchivoAPapelera(id)),
+    restaurarArchivos: (ids) => mutar(async () => { for (const id of ids) await restaurarArchivoDePapelera(id) }),
+    eliminarDefinitivamente: (ids) => mutar(async () => { for (const id of ids) await eliminarDefinitivamenteDePapelera(id) }),
   }
 
   return <ArchivosContexto.Provider value={valor}>{children}</ArchivosContexto.Provider>

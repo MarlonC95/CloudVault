@@ -1,22 +1,32 @@
 import { useState } from 'react'
 import { X, FolderPlus } from 'lucide-react'
 import { COLOR_MARCA, COLOR_ICONO_FONDO } from '../../theme/colores'
+import { convertirEnErrorApi, obtenerMensajeDeCampo } from '../../services/errorApi'
 
 interface ModalNuevaCarpetaProps {
   visible: boolean
   onCerrar: () => void
-  onCrear: (nombre: string) => void
+  onCrear: (nombre: string) => Promise<void>
 }
 
 function ModalNuevaCarpeta({ visible, onCerrar, onCrear }: ModalNuevaCarpetaProps) {
   const [nombre, setNombre] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState(false)
 
   if (!visible) return null
 
-  function confirmar() {
+  async function confirmar() {
     if (!nombre.trim()) return
-    onCrear(nombre.trim())
-    setNombre('')
+    setGuardando(true)
+    setError(null)
+    try {
+      await onCrear(nombre.trim())
+      setNombre('')
+    } catch (causa) {
+      const errorApi = convertirEnErrorApi(causa)
+      setError(obtenerMensajeDeCampo(errorApi, 'nombre') ?? errorApi.message)
+    } finally { setGuardando(false) }
   }
 
   return (
@@ -48,14 +58,15 @@ function ModalNuevaCarpeta({ visible, onCerrar, onCrear }: ModalNuevaCarpetaProp
           placeholder="Ej. Contratos 2026"
           value={nombre}
           onChange={(evento) => setNombre(evento.target.value)}
-          onKeyDown={(evento) => evento.key === 'Enter' && confirmar()}
+          onKeyDown={(evento) => { if (evento.key === 'Enter') void confirmar() }}
           autoFocus
         />
 
+        {error && <p role="alert" className="small text-danger">{error}</p>}
         <button
           type="button"
           onClick={confirmar}
-          disabled={!nombre.trim()}
+          disabled={!nombre.trim() || guardando}
           className="btn w-100 d-flex justify-content-center align-items-center gap-2 text-white fw-semibold"
           style={{ backgroundColor: COLOR_MARCA, borderRadius: '50px', padding: '10px' }}
         >

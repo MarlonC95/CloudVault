@@ -66,7 +66,7 @@ function TablaArchivos({
         <p style={{ fontSize: 11, fontWeight: 700, color: '#64748B', letterSpacing: '0.07em', margin: 0 }}>
           {titulo}
         </p>
-        <span style={{ fontSize: 12, color: '#94A3B8' }}>Actualizado hace 2 min</span>
+        <span style={{ fontSize: 12, color: '#94A3B8' }}>{archivos.length} archivo{archivos.length === 1 ? '' : 's'}</span>
       </div>
 
       {archivos.length === 0 ? (

@@ -6,6 +6,8 @@ export interface Archivo {
   tipo: TipoArchivo
   fechaModificacion: string
   tamano: string
+  tamanoBytes: number
+  fechaModificacionIso: string
   propietario: string
   cifrado: boolean
   esNuevo?: boolean
@@ -20,6 +22,8 @@ export interface Carpeta {
   nombre: string
   color: string
   colorFondo: string
+  cantidadArchivos: number
+  padreId: string | null
 }
 
 export interface CargaEnProgreso {
@@ -27,5 +31,6 @@ export interface CargaEnProgreso {
   nombreArchivo: string
   tamano: string
   progreso: number
-  estado: 'subiendo' | 'en-cola'
+  estado: 'subiendo' | 'en-cola' | 'completado' | 'error'
+  mensajeError?: string
 }

@@ -5,9 +5,10 @@ import type { CargaEnProgreso } from '../../types/archivo'
 
 interface NotificacionCargasProps {
   cargas: CargaEnProgreso[]
+  onDescartar: (id: string) => void
 }
 
-function NotificacionCargas({ cargas }: NotificacionCargasProps) {
+function NotificacionCargas({ cargas, onDescartar }: NotificacionCargasProps) {
 const [estaExpandida, setEstaExpandida] = useState(false)
   if (cargas.length === 0) return null
 
@@ -30,7 +31,7 @@ const [estaExpandida, setEstaExpandida] = useState(false)
       >
         <span className="d-flex align-items-center gap-2 fw-semibold small">
           <Upload size={16} />
-          Subiendo {cargas.length} archivos...
+          {cargas.some((carga) => carga.estado === 'subiendo' || carga.estado === 'en-cola') ? 'Subiendo' : 'Cargas'} {cargas.length} archivos
         </span>
         <span className="d-flex align-items-center gap-1 ms-3">
           {estaExpandida ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
@@ -62,6 +63,10 @@ const [estaExpandida, setEstaExpandida] = useState(false)
                   >
                     En cola
                   </span>
+                ) : carga.estado === 'error' ? (
+                  <span className="fw-semibold" style={{ color: '#FCA5A5' }}>Error</span>
+                ) : carga.estado === 'completado' ? (
+                  <span className="fw-semibold" style={{ color: '#86EFAC' }}>Listo</span>
                 ) : (
                   <span className="fw-semibold" style={{ color: COLOR_MARCA }}>
                     {carga.progreso}%
@@ -74,7 +79,8 @@ const [estaExpandida, setEstaExpandida] = useState(false)
                 />
               </div>
               <div className="small mt-1" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                {carga.tamano} {carga.estado === 'en-cola' ? '· Esperando...' : ''}
+                {carga.tamano} {carga.estado === 'en-cola' ? '· Esperando...' : carga.mensajeError ? `· ${carga.mensajeError}` : ''}
+                {(carga.estado === 'error' || carga.estado === 'completado') && <button type="button" className="btn btn-sm p-0 ms-2 text-white" onClick={() => onDescartar(carga.id)} aria-label={`Descartar ${carga.nombreArchivo}`}><X size={12} /></button>}
               </div>
             </div>
           ))}

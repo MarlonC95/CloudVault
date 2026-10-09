@@ -2,6 +2,7 @@ import axios from 'axios'
 import { clienteApi } from './clienteApi'
 import { convertirEnErrorApi } from './errorApi'
 import { formatearFechaRelativa } from '../utils/fechas'
+import { formatearTamanoBytes, obtenerTipoArchivoPorNombre } from '../utils/formatoArchivo'
 import { mapearPagina } from '../types/api'
 import type { PaginaApi, Pagina, RespuestaApi, RespuestaMensajeApi } from '../types/api'
 import type { Archivo, TipoArchivo } from '../types/archivo'
@@ -11,7 +12,7 @@ import type { RangoFecha, RangoTamano } from '../utils/filtrosArchivos'
 interface ArchivoApi {
   id: string
   nombre: string
-  tipo: TipoArchivo
+  tipo: string
   tamano_bytes: number
   tamano_legible: string
   fecha_modificacion: string
@@ -52,8 +53,10 @@ function mapearArchivo(archivo: ArchivoApi): Archivo {
   return {
     id: archivo.id,
     nombre: archivo.nombre,
-    tipo: archivo.tipo,
-    tamano: archivo.tamano_legible,
+    tipo: obtenerTipoArchivoPorNombre(archivo.nombre),
+    tamano: formatearTamanoBytes(archivo.tamano_bytes),
+    tamanoBytes: archivo.tamano_bytes,
+    fechaModificacionIso: archivo.fecha_modificacion,
     fechaModificacion: formatearFechaRelativa(archivo.fecha_modificacion),
     propietario: archivo.propietario.nombre_completo,
     cifrado: archivo.cifrado,
