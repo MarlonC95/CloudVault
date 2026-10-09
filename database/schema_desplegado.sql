@@ -2,7 +2,7 @@
 -- Fuente de verdad para pruebas y para dev_pruebas. Sin datos ni credenciales.
 -- Portable: gen_random_uuid() (PostgreSQL >= 13) reemplaza uuid_generate_v4() para no depender de uuid-ossp.
 
--- Tablas: archivos, carpetas, enlaces_publicos, historial_pagos, intentos_publicacion, logs_auditoria, miembros_organizacion, organizaciones, permisos_recurso, planes, sesiones_carga, suscripciones, usuarios
+-- Tablas: archivos, carpetas, enlaces_publicos, historial_pagos, intentos_publicacion, logs_auditoria, miembros_organizacion, organizaciones, permisos_recurso, planes, sesiones_carga, suscripciones, trabajos_mantenimiento, usuarios
 CREATE TABLE IF NOT EXISTS "archivos" (
     "id" uuid NOT NULL DEFAULT gen_random_uuid(),
     "organizacion_id" uuid,
@@ -122,6 +122,19 @@ CREATE TABLE IF NOT EXISTS "suscripciones" (
     "auto_renovar" boolean NOT NULL DEFAULT true,
     "intervalo" character varying(20) NOT NULL DEFAULT 'MONTHLY'::character varying
 );
+CREATE TABLE IF NOT EXISTS "trabajos_mantenimiento" (
+    "sesion_id" uuid NOT NULL,
+    "cancelar" boolean NOT NULL DEFAULT false,
+    "copia_concluida" boolean NOT NULL DEFAULT false,
+    "estado" character varying(16) NOT NULL DEFAULT 'PENDING'::character varying,
+    "intentos" bigint NOT NULL DEFAULT 0,
+    "fallos_consecutivos" integer NOT NULL DEFAULT 0,
+    "proximo_intento" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "causa" character varying(32) NOT NULL DEFAULT ''::character varying,
+    "verificado_en" timestamp with time zone,
+    "creado_en" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "actualizado_en" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS "usuarios" (
     "id" uuid NOT NULL DEFAULT gen_random_uuid(),
     "correo_electronico" character varying(255) NOT NULL,
@@ -147,6 +160,7 @@ ALTER TABLE "permisos_recurso" ADD CONSTRAINT "permisos_recurso_pkey" PRIMARY KE
 ALTER TABLE "planes" ADD CONSTRAINT "planes_pkey" PRIMARY KEY (id);
 ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_pkey" PRIMARY KEY (id);
 ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_pkey" PRIMARY KEY (id);
+ALTER TABLE "trabajos_mantenimiento" ADD CONSTRAINT "trabajos_mantenimiento_pkey" PRIMARY KEY (sesion_id);
 ALTER TABLE "usuarios" ADD CONSTRAINT "usuarios_pkey" PRIMARY KEY (id);
 ALTER TABLE "archivos" ADD CONSTRAINT "archivos_clave_s3_key" UNIQUE (clave_s3);
 ALTER TABLE "enlaces_publicos" ADD CONSTRAINT "enlaces_publicos_token_random_key" UNIQUE (token_random);
@@ -166,6 +180,11 @@ ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_checksum_sha256_chec
 ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_estado_check" CHECK (((estado)::text = ANY ((ARRAY['PENDING'::character varying, 'CONFIRMED'::character varying, 'CANCELED'::character varying, 'EXPIRED'::character varying])::text[])));
 ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_tamano_bytes_check" CHECK ((tamano_bytes >= 0));
 ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_intervalo_check" CHECK (((intervalo)::text = ANY ((ARRAY['MONTHLY'::character varying, 'YEARLY'::character varying])::text[])));
+ALTER TABLE "trabajos_mantenimiento" ADD CONSTRAINT "trabajos_mantenimiento_causa_check" CHECK (((causa)::text = ANY ((ARRAY[''::character varying, 'URL_VIGENTE'::character varying, 'COPY_AMBIGUO'::character varying, 'REFERENCIADO'::character varying, 'DEPENDENCIA'::character varying, 'S3'::character varying, 'SQL'::character varying, 'INTEGRIDAD'::character varying, 'OCUPADO'::character varying, 'RECUPERACION'::character varying, 'ERROR'::character varying])::text[])));
+ALTER TABLE "trabajos_mantenimiento" ADD CONSTRAINT "trabajos_mantenimiento_check" CHECK ((((estado)::text <> 'VERIFIED'::text) OR (verificado_en IS NOT NULL)));
+ALTER TABLE "trabajos_mantenimiento" ADD CONSTRAINT "trabajos_mantenimiento_estado_check" CHECK (((estado)::text = ANY ((ARRAY['PENDING'::character varying, 'RETRY'::character varying, 'RECONCILE'::character varying, 'VERIFIED'::character varying])::text[])));
+ALTER TABLE "trabajos_mantenimiento" ADD CONSTRAINT "trabajos_mantenimiento_fallos_consecutivos_check" CHECK ((fallos_consecutivos >= 0));
+ALTER TABLE "trabajos_mantenimiento" ADD CONSTRAINT "trabajos_mantenimiento_intentos_check" CHECK ((intentos >= 0));
 ALTER TABLE "archivos" ADD CONSTRAINT "archivos_carpeta_id_fkey" FOREIGN KEY (carpeta_id) REFERENCES carpetas(id) ON DELETE SET NULL;
 ALTER TABLE "archivos" ADD CONSTRAINT "archivos_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES organizaciones(id) ON DELETE CASCADE;
 ALTER TABLE "archivos" ADD CONSTRAINT "archivos_propietario_id_fkey" FOREIGN KEY (propietario_id) REFERENCES usuarios(id) ON DELETE RESTRICT;
@@ -187,6 +206,7 @@ ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_organizacion_id_fkey
 ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_solicitante_id_fkey" FOREIGN KEY (solicitante_id) REFERENCES usuarios(id) ON DELETE RESTRICT;
 ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES organizaciones(id) ON DELETE CASCADE;
 ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_plan_id_fkey" FOREIGN KEY (plan_id) REFERENCES planes(id) ON DELETE RESTRICT;
+ALTER TABLE "trabajos_mantenimiento" ADD CONSTRAINT "trabajos_mantenimiento_sesion_id_fkey" FOREIGN KEY (sesion_id) REFERENCES sesiones_carga(id) ON DELETE RESTRICT;
 
 CREATE INDEX IF NOT EXISTS idx_archivos_carpeta ON archivos USING btree (carpeta_id);
 CREATE INDEX IF NOT EXISTS idx_archivos_org ON archivos USING btree (organizacion_id);
@@ -198,6 +218,7 @@ CREATE INDEX IF NOT EXISTS idx_logs_auditoria_org ON logs_auditoria USING btree 
 CREATE INDEX IF NOT EXISTS idx_miembros_org ON miembros_organizacion USING btree (organizacion_id, usuario_id);
 CREATE INDEX IF NOT EXISTS idx_sesiones_cuota_pendiente ON sesiones_carga USING btree (organizacion_id, expira_en) WHERE ((estado)::text = 'PENDING'::text);
 CREATE INDEX IF NOT EXISTS idx_sesiones_solicitante ON sesiones_carga USING btree (solicitante_id);
+CREATE INDEX IF NOT EXISTS idx_mantenimiento_proximo ON trabajos_mantenimiento USING btree (proximo_intento, sesion_id);
 
 CREATE OR REPLACE FUNCTION trigger_actualizar_marca_tiempo()
  RETURNS trigger
@@ -258,6 +279,7 @@ CREATE OR REPLACE TRIGGER trg_actualizar_carpetas BEFORE UPDATE ON carpetas FOR 
 CREATE OR REPLACE TRIGGER trg_actualizar_intentos_publicacion BEFORE UPDATE ON intentos_publicacion FOR EACH ROW EXECUTE FUNCTION trigger_actualizar_marca_tiempo();
 CREATE OR REPLACE TRIGGER trg_actualizar_organizaciones BEFORE UPDATE ON organizaciones FOR EACH ROW EXECUTE FUNCTION trigger_actualizar_marca_tiempo();
 CREATE OR REPLACE TRIGGER trg_actualizar_sesiones_carga BEFORE UPDATE ON sesiones_carga FOR EACH ROW EXECUTE FUNCTION trigger_actualizar_marca_tiempo();
+CREATE OR REPLACE TRIGGER trg_actualizar_trabajos_mantenimiento BEFORE UPDATE ON trabajos_mantenimiento FOR EACH ROW EXECUTE FUNCTION trigger_actualizar_marca_tiempo();
 CREATE OR REPLACE TRIGGER trg_actualizar_usuarios BEFORE UPDATE ON usuarios FOR EACH ROW EXECUTE FUNCTION trigger_actualizar_marca_tiempo();
 
 -- Semillas de planes (copiadas de la tabla planes desplegada)

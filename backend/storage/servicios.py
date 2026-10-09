@@ -40,6 +40,9 @@ class ProveedorStorage:
 
     def __init__(self):
         self.bloquear_cuota = RepositorioCargas().unidad_de_trabajo
+        # `archivos` no tiene columna de checksum: se recuerda solo entre registrar_archivo y la
+        # relectura de autorizar_descarga dentro de la misma confirmación (el puente exige igualdad).
+        self._checksums = {}
 
     def resolver_destino(self, *, solicitante_id, carpeta_id):
         with connections[self.using].cursor() as cursor:
@@ -72,18 +75,22 @@ class ProveedorStorage:
             nombre=archivo.nombre, clave_s3=archivo.clave_final,
             tamano_bytes=archivo.tamano_bytes, tipo_mime=archivo.tipo_mime,
         )
+        self._checksums[archivo.archivo_id] = archivo.checksum_sha256
 
     def autorizar_descarga(self, *, solicitante_id, archivo_id):
         with connections[self.using].cursor() as cursor:
             cursor.execute("""SELECT a.id, a.organizacion_id, a.carpeta_id, a.nombre,
-                    a.clave_s3, a.tamano_bytes, a.tipo_mime
+                    a.clave_s3, a.tamano_bytes, a.tipo_mime,
+                    (SELECT s.checksum_sha256 FROM sesiones_carga s
+                     WHERE s.archivo_id = a.id ORDER BY s.creado_en DESC LIMIT 1)
                 FROM archivos a JOIN miembros_organizacion m ON m.organizacion_id = a.organizacion_id
                 WHERE a.id = %s AND m.usuario_id = %s AND m.nivel_rol IN (0,2,3)
                     AND NOT a.en_papelera""", [archivo_id, solicitante_id])
             fila = cursor.fetchone()
         if fila is None:
             raise ErrorCarga(CodigoError.NO_ENCONTRADO)
-        return ArchivoVerificado(fila[0], solicitante_id, *fila[1:], None)
+        checksum = self._checksums.pop(archivo_id, None) or fila[7]
+        return ArchivoVerificado(fila[0], solicitante_id, *fila[1:7], checksum)
 
     def inspeccionar_objeto_tecnico(self, *, sesion_id, organizacion_id, clave):
         referenciado = Archivo.objects.using(self.using).filter(clave_s3=clave).exists()
