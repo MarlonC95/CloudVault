@@ -27,15 +27,10 @@ class ArchivosAPITests(APITestCase):
 
     def _crear_carpeta(self, organizacion_id=None, **kwargs):
         organizacion_id = organizacion_id or self.organizacion_id
-        propietario = kwargs.pop("propietario", self.usuario)
         nombre = kwargs.get("nombre", "Carpeta")
-        padre = kwargs.get("padre")
-        ruta = f"{padre.ruta_completa}/{nombre}" if padre else f"/{nombre}"
         defaults = {
             "organizacion_id": organizacion_id,
-            "propietario": propietario,
             "nombre": nombre,
-            "ruta_completa": ruta,
         }
         defaults.update(kwargs)
         return Carpeta.objects.create(**defaults)
@@ -47,7 +42,7 @@ class ArchivosAPITests(APITestCase):
         defaults = {
             "organizacion_id": organizacion_id,
             "propietario": propietario,
-            "nombre_original": "archivo.txt",
+            "nombre": "archivo.txt",
             "clave_s3": clave,
             "tamano_bytes": 1024,
             "tipo_mime": "text/plain",
@@ -87,22 +82,22 @@ class ArchivosAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_aislamiento_lista(self):
-        self._crear_archivo(nombre_original="mio.txt")
-        self._crear_archivo(organizacion_id=self.otra_organizacion_id, nombre_original="ajeno.txt")
+        self._crear_archivo(nombre="mio.txt")
+        self._crear_archivo(organizacion_id=self.otra_organizacion_id, nombre="ajeno.txt")
         response = self.client.get(self._url_org("archivo-list"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         nombres = {a["nombre"] for a in response.data["data"]["results"]}
         self.assertEqual(nombres, {"mio.txt"})
 
     def test_aislamiento_detalle_404(self):
-        ajeno = self._crear_archivo(organizacion_id=self.otra_organizacion_id, nombre_original="ajeno.txt")
+        ajeno = self._crear_archivo(organizacion_id=self.otra_organizacion_id, nombre="ajeno.txt")
         response = self.client.get(self._url_org("archivo-detail", ajeno.pk))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.data["error"]["code"], "NO_ENCONTRADO")
 
     def test_lista_excluye_papelera(self):
-        self._crear_archivo(nombre_original="activo.txt")
-        self._crear_archivo(nombre_original="basura.txt", en_papelera=True)
+        self._crear_archivo(nombre="activo.txt")
+        self._crear_archivo(nombre="basura.txt", en_papelera=True)
         response = self.client.get(self._url_org("archivo-list"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         nombres = {a["nombre"] for a in response.data["data"]["results"]}
@@ -110,8 +105,8 @@ class ArchivosAPITests(APITestCase):
 
     def test_filtro_carpeta(self):
         carpeta = self._crear_carpeta(nombre="Docs")
-        self._crear_archivo(nombre_original="raiz.txt", carpeta=None)
-        self._crear_archivo(nombre_original="en_docs.txt", carpeta=carpeta)
+        self._crear_archivo(nombre="raiz.txt", carpeta=None)
+        self._crear_archivo(nombre="en_docs.txt", carpeta=carpeta)
 
         response = self.client.get(
             self._url("archivo-list", organizacion_id=self.organizacion_id, carpeta_id="null")
@@ -127,9 +122,15 @@ class ArchivosAPITests(APITestCase):
         nombres = {a["nombre"] for a in response.data["data"]["results"]}
         self.assertEqual(nombres, {"en_docs.txt"})
 
+        response = self.client.get(
+            self._url("archivo-list", organizacion_id=self.organizacion_id, carpeta="null")
+        )
+        nombres = {a["nombre"] for a in response.data["data"]["results"]}
+        self.assertEqual(nombres, {"raiz.txt", "en_docs.txt"})
+
     def test_filtro_buscar(self):
-        self._crear_archivo(nombre_original="contrato.pdf")
-        self._crear_archivo(nombre_original="foto.png")
+        self._crear_archivo(nombre="contrato.pdf")
+        self._crear_archivo(nombre="foto.png")
         response = self.client.get(
             self._url("archivo-list", organizacion_id=self.organizacion_id, buscar="cont")
         )
@@ -138,9 +139,9 @@ class ArchivosAPITests(APITestCase):
         self.assertEqual(nombres, {"contrato.pdf"})
 
     def test_filtro_tipo(self):
-        self._crear_archivo(nombre_original="doc.pdf")
-        self._crear_archivo(nombre_original="sheet.xlsx")
-        self._crear_archivo(nombre_original="readme")
+        self._crear_archivo(nombre="doc.pdf")
+        self._crear_archivo(nombre="sheet.xlsx")
+        self._crear_archivo(nombre="readme")
 
         response = self.client.get(
             self._url("archivo-list", organizacion_id=self.organizacion_id, tipo="pdf")
@@ -157,7 +158,7 @@ class ArchivosAPITests(APITestCase):
         self.assertEqual(nombres, {"readme"})
 
     def test_renombrar(self):
-        archivo = self._crear_archivo(nombre_original="viejo.txt")
+        archivo = self._crear_archivo(nombre="viejo.txt")
         response = self.client.patch(
             self._url_org("archivo-detail", archivo.pk),
             {"nombre": "nuevo.txt"},
@@ -165,14 +166,13 @@ class ArchivosAPITests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["data"]["nombre"], "nuevo.txt")
-        self.assertEqual(response.data["data"]["ruta_completa"], "/nuevo.txt")
         archivo.refresh_from_db()
-        self.assertEqual(archivo.nombre_original, "nuevo.txt")
+        self.assertEqual(archivo.nombre, "nuevo.txt")
 
     def test_renombrar_duplicado_409(self):
         carpeta = self._crear_carpeta(nombre="Docs")
-        self._crear_archivo(nombre_original="a.txt", carpeta=carpeta)
-        archivo2 = self._crear_archivo(nombre_original="b.txt", carpeta=carpeta)
+        self._crear_archivo(nombre="a.txt", carpeta=carpeta)
+        archivo2 = self._crear_archivo(nombre="b.txt", carpeta=carpeta)
         response = self.client.patch(
             self._url_org("archivo-detail", archivo2.pk),
             {"nombre": "a.txt"},
@@ -182,7 +182,7 @@ class ArchivosAPITests(APITestCase):
         self.assertIn("nombre", response.data["error"]["fields"])
 
     def test_mover_a_carpeta(self):
-        archivo = self._crear_archivo(nombre_original="mover.txt")
+        archivo = self._crear_archivo(nombre="mover.txt")
         carpeta = self._crear_carpeta(nombre="Destino")
         response = self.client.post(
             self._url_org("archivo-mover", archivo.pk),
@@ -191,13 +191,12 @@ class ArchivosAPITests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["data"]["carpeta_id"], str(carpeta.pk))
-        self.assertEqual(response.data["data"]["ruta_completa"], "/Destino/mover.txt")
         archivo.refresh_from_db()
         self.assertEqual(archivo.carpeta_id, carpeta.pk)
 
     def test_mover_a_raiz(self):
         carpeta = self._crear_carpeta(nombre="Origen")
-        archivo = self._crear_archivo(nombre_original="raiz.txt", carpeta=carpeta)
+        archivo = self._crear_archivo(nombre="raiz.txt", carpeta=carpeta)
         response = self.client.post(
             self._url_org("archivo-mover", archivo.pk),
             {"carpeta_id": None},
@@ -205,12 +204,11 @@ class ArchivosAPITests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.data["data"]["carpeta_id"])
-        self.assertEqual(response.data["data"]["ruta_completa"], "/raiz.txt")
         archivo.refresh_from_db()
         self.assertIsNone(archivo.carpeta_id)
 
     def test_renombrar_nombre_vacio(self):
-        archivo = self._crear_archivo(nombre_original="x.txt")
+        archivo = self._crear_archivo(nombre="x.txt")
         response = self.client.patch(
             self._url_org("archivo-detail", archivo.pk),
             {"nombre": "   "},
@@ -221,7 +219,7 @@ class ArchivosAPITests(APITestCase):
         self.assertIn("nombre", response.data["error"]["fields"])
 
     def test_mover_rechaza_carpeta_inexistente(self):
-        archivo = self._crear_archivo(nombre_original="x.txt")
+        archivo = self._crear_archivo(nombre="x.txt")
         response = self.client.post(
             self._url_org("archivo-mover", archivo.pk),
             {"carpeta_id": str(uuid.uuid4())},
@@ -232,7 +230,7 @@ class ArchivosAPITests(APITestCase):
         self.assertIn("carpeta_id", response.data["error"]["fields"])
 
     def test_mover_rechaza_carpeta_otra_organizacion(self):
-        archivo = self._crear_archivo(nombre_original="x.txt")
+        archivo = self._crear_archivo(nombre="x.txt")
         ajena = self._crear_carpeta(
             organizacion_id=self.otra_organizacion_id, nombre="Ajena"
         )

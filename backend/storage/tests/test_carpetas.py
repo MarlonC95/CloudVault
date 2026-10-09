@@ -25,15 +25,10 @@ class CarpetasAPITests(APITestCase):
 
     def _crear_carpeta(self, organizacion_id=None, **kwargs):
         organizacion_id = organizacion_id or self.organizacion_id
-        propietario = kwargs.pop("propietario", self.usuario)
         nombre = kwargs.get("nombre", "Carpeta")
-        padre = kwargs.get("padre")
-        ruta = f"{padre.ruta_completa}/{nombre}" if padre else f"/{nombre}"
         defaults = {
             "organizacion_id": organizacion_id,
-            "propietario": propietario,
             "nombre": nombre,
-            "ruta_completa": ruta,
         }
         defaults.update(kwargs)
         return Carpeta.objects.create(**defaults)
@@ -45,7 +40,7 @@ class CarpetasAPITests(APITestCase):
         defaults = {
             "organizacion_id": organizacion_id,
             "propietario": propietario,
-            "nombre_original": "archivo.txt",
+            "nombre": "archivo.txt",
             "clave_s3": clave,
             "tamano_bytes": 1024,
             "tipo_mime": "text/plain",
@@ -106,25 +101,25 @@ class CarpetasAPITests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["data"]["ruta_completa"], "/Documentos")
-        self.assertIsNone(response.data["data"]["carpeta_padre_id"])
+        self.assertIsNone(response.data["data"]["padre_id"])
         self.assertEqual(response.data["data"]["organizacion_id"], str(self.organizacion_id))
 
     def test_crear_subcarpeta(self):
         padre = self._crear_carpeta(nombre="Padre")
         response = self.client.post(
             self._url_org("carpeta-list"),
-            {"nombre": "Hija", "carpeta_padre_id": str(padre.pk)},
+            {"nombre": "Hija", "padre_id": str(padre.pk)},
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["data"]["ruta_completa"], "/Padre/Hija")
-        self.assertEqual(response.data["data"]["carpeta_padre_id"], str(padre.pk))
+        self.assertEqual(response.data["data"]["padre_id"], str(padre.pk))
 
     def test_filtro_carpeta_padre(self):
         raiz = self._crear_carpeta(nombre="Raiz")
         self._crear_carpeta(padre=raiz, nombre="Hija")
         response = self.client.get(
-            self._url("carpeta-list", organizacion_id=self.organizacion_id, carpeta_padre_id="null")
+            self._url("carpeta-list", organizacion_id=self.organizacion_id, padre="null")
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         nombres = {c["nombre"] for c in response.data["data"]["results"]}
@@ -203,25 +198,27 @@ class CarpetasAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertIn("nombre", response.data["error"]["fields"])
 
-    def test_eliminar_marca_papelera(self):
+    def test_eliminar_desvincula_archivos(self):
         carpeta = self._crear_carpeta(nombre="Borrar")
         hija = self._crear_carpeta(padre=carpeta, nombre="Hija")
         archivo = self._crear_archivo(carpeta=carpeta)
+        archivo_hijo = self._crear_archivo(carpeta=hija, clave_s3="clave-hijo")
         response = self.client.delete(self._url_org("carpeta-detail", carpeta.pk))
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("papelera", response.data["data"]["mensaje"])
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         for obj in (carpeta, hija):
-            obj.refresh_from_db()
-            self.assertTrue(obj.en_papelera)
+            self.assertFalse(Carpeta.objects.filter(pk=obj.pk).exists())
         archivo.refresh_from_db()
-        self.assertTrue(archivo.en_papelera)
+        archivo_hijo.refresh_from_db()
+        self.assertIsNone(archivo.carpeta_id)
+        self.assertIsNone(archivo_hijo.carpeta_id)
+        self.assertFalse(archivo.en_papelera)
         response_list = self.client.get(self._url_org("carpeta-list"))
         self.assertEqual(response_list.data["data"]["count"], 0)
 
     def test_contenido_lista_hijos(self):
         carpeta = self._crear_carpeta(nombre="Caja")
         hija = self._crear_carpeta(padre=carpeta, nombre="Hija")
-        archivo = self._crear_archivo(carpeta=carpeta, nombre_original="a.txt")
+        archivo = self._crear_archivo(carpeta=carpeta, nombre="a.txt")
         response = self.client.get(self._url_org("carpeta-contenido", carpeta.pk))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.data["data"]
