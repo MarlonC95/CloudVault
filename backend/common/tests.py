@@ -1,3 +1,6 @@
+from uuid import uuid4
+
+from django.db import connection
 from django.test import SimpleTestCase, TestCase
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
@@ -44,9 +47,22 @@ class ResolverOrganizacionTests(TestCase):
         ambito = resolver_organizacion(_Usuario(usuario_id))
         self.assertEqual((ambito.organizacion_id, ambito.nivel_rol), (org_id, 2))
 
-    def test_sin_membresia_es_403(self):
-        with self.assertRaises(PermissionDenied):
-            resolver_organizacion(_Usuario(crear_usuario()))
+    def test_usuario_legado_sin_membresia_recibe_espacio_personal(self):
+        usuario_id = crear_usuario()
+        ambito = resolver_organizacion(_Usuario(usuario_id))
+        self.assertEqual(ambito.nivel_rol, 0)
+        with connection.cursor() as c:
+            c.execute(
+                "SELECT count(*) FROM suscripciones WHERE organizacion_id=%s AND estado='ACTIVE'",
+                [ambito.organizacion_id],
+            )
+            self.assertEqual(c.fetchone()[0], 1)
+        # Idempotente: la segunda llamada reutiliza el mismo espacio.
+        self.assertEqual(resolver_organizacion(_Usuario(usuario_id)).organizacion_id, ambito.organizacion_id)
+
+    def test_sin_membresia_con_organizacion_pedida_es_404(self):
+        with self.assertRaises(NotFound):
+            resolver_organizacion(_Usuario(crear_usuario()), organizacion_id=uuid4())
 
     def test_varias_membresias_exigen_organizacion(self):
         usuario_id, org_id = espacio_de_trabajo()

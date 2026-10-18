@@ -6,7 +6,7 @@ Reglas acordadas con el DBA (el esquema SQL manda; ``miembros_organizacion.nivel
 * ``organizacion_id`` informado: el usuario debe ser miembro, si no => 404 NO_ENCONTRADO
   (no se revela si la organización existe).
 * omitido: se usa la única membresía; varias => 400 VALIDATION_ERROR
-  (``fields.organizacion_id``); ninguna => 403 SIN_PERMISO.
+  (``fields.organizacion_id``); ninguna => se crea el espacio personal (usuario legado).
 * operaciones de escritura exigen ``nivel_rol`` en (0, 2, 3); el nivel 1 solo lee.
 """
 
@@ -45,9 +45,7 @@ def _a_uuid(valor):
         raise ValidationError({"organizacion_id": ["El identificador de organización no es válido."]})
 
 
-def resolver_organizacion(usuario, organizacion_id=None, escritura=False, using="default"):
-    """Devuelve el ``Ambito`` del usuario o lanza una excepción DRF del contrato."""
-    pedido = _a_uuid(organizacion_id)
+def _membresias(usuario, using):
     with connections[using].cursor() as cursor:
         cursor.execute(
             """SELECT m.organizacion_id, m.nivel_rol
@@ -57,7 +55,23 @@ def resolver_organizacion(usuario, organizacion_id=None, escritura=False, using=
                ORDER BY m.fecha_union, m.organizacion_id""",
             [usuario.pk],
         )
-        membresias = cursor.fetchall()
+        return cursor.fetchall()
+
+
+def resolver_organizacion(usuario, organizacion_id=None, escritura=False, using="default"):
+    """Devuelve el ``Ambito`` del usuario o lanza una excepción DRF del contrato.
+
+    Usuarios legados (creados antes de que el registro creara la organización personal)
+    reciben su espacio personal en la primera petición, en lugar de un 403.
+    """
+    pedido = _a_uuid(organizacion_id)
+    membresias = _membresias(usuario, using)
+    if not membresias and pedido is None:
+        # Import diferido: common no debe cargar subscriptions al importarse.
+        from subscriptions.espacio import asegurar_espacio_personal
+
+        asegurar_espacio_personal(usuario.pk)
+        membresias = _membresias(usuario, using)
     if pedido is not None:
         elegida = next((m for m in membresias if m[0] == pedido), None)
         if elegida is None:
