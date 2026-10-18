@@ -2,8 +2,9 @@
 --
 -- Ejecutar UNA vez en Railway, conectado como el dueño de las tablas (postgres).
 -- ANTES: hacer backup de public.
--- Reemplazar USUARIO_APP por el usuario de la DATABASE_URL del backend (el mismo de dev_pruebas)
+-- Reemplazar USUARIO_APP por el usuario de la DATABASE_URL del backend.
 -- o por un usuario dedicado para la aplicación.
+-- APLICADO en Railway el 2026-10-18 (public quedó con 14 tablas; respaldo de las tablas Django en local).
 -- Todo va en una transacción: si algo falla, no se aplica nada.
 
 BEGIN;

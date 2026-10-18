@@ -1,5 +1,5 @@
 -- DDL reconstruido del esquema `public` desplegado (solo lectura del catálogo).
--- Fuente de verdad para pruebas y para dev_pruebas. Sin datos ni credenciales.
+-- Copia del DDL de public (Railway) para las pruebas automáticas en PostgreSQL local. Sin datos ni credenciales.
 -- Portable: gen_random_uuid() (PostgreSQL >= 13) reemplaza uuid_generate_v4() para no depender de uuid-ossp.
 
 -- Tablas: archivos, carpetas, enlaces_publicos, historial_pagos, intentos_publicacion, logs_auditoria, miembros_organizacion, organizaciones, permisos_recurso, planes, sesiones_carga, suscripciones, trabajos_mantenimiento, usuarios
