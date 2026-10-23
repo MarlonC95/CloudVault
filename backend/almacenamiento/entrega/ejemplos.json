@@ -1,0 +1,36 @@
+{
+  "advertencia": "Ejemplos ficticios: UUID, fechas y URLs no representan credenciales ni operaciones vigentes.",
+  "IniciarCargaInput": {
+    "nombre": "ensayo-fase09.txt",
+    "tamano_bytes": 17,
+    "tipo_mime": "text/plain",
+    "carpeta_id": "11111111-1111-4111-8111-111111111111"
+  },
+  "ConfirmarCargaInput": {},
+  "ConfirmarCargaConETag": {"etag": "\"etag-ficticio\""},
+  "IniciarCargaSuccess": {
+    "data": {
+      "archivo_id": "22222222-2222-4222-8222-222222222222",
+      "url_subida": "https://storage.example.invalid/temporal?firma=ficticia",
+      "metodo": "PUT",
+      "encabezados": {"Content-Type": "text/plain"},
+      "expira_en": "2030-01-01T00:00:00Z"
+    }
+  },
+  "ConfirmarCargaSuccess": {
+    "data": {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "nombre": "ensayo-fase09.txt",
+      "es_nuevo": true,
+      "en_papelera": false
+    }
+  },
+  "DescargaSuccess": {
+    "data": {
+      "url_descarga": "https://storage.example.invalid/final?firma=ficticia",
+      "nombre": "ensayo-fase09.txt",
+      "expira_en": "2030-01-01T00:00:00Z"
+    }
+  },
+  "Error": {"error": {"code": "CUOTA_EXCEDIDA", "fields": {}}}
+}

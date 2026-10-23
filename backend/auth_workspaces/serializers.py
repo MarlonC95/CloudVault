@@ -3,6 +3,8 @@
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Usuario
 
@@ -194,3 +196,106 @@ class RegistroErrorBodySerializer(serializers.Serializer):
 
 class RegistroErrorSerializer(serializers.Serializer):
     error = RegistroErrorBodySerializer()
+
+
+class RefreshInputSerializer(serializers.Serializer):
+    refresh = serializers.CharField(required=True, trim_whitespace=True)
+
+
+class LogoutInputSerializer(serializers.Serializer):
+    refresh = serializers.CharField(required=True, trim_whitespace=True)
+
+
+class PerfilPatchSerializer(serializers.Serializer):
+    nombre_completo = serializers.CharField(
+        max_length=150, trim_whitespace=True, required=False
+    )
+    correo_electronico = serializers.EmailField(
+        max_length=255, required=False
+    )
+
+    def to_internal_value(self, data):
+        if not isinstance(data, dict):
+            raise serializers.ValidationError(
+                {"non_field_errors": ["Se requiere un objeto JSON."]}
+            )
+        extra = sorted(set(data) - set(self.fields))
+        if extra:
+            raise serializers.ValidationError(
+                {name: ["Este campo no está permitido."] for name in extra}
+            )
+        invalid = {
+            name: ["Debe ser una cadena de texto."]
+            for name in self.fields
+            if name in data and not isinstance(data[name], str)
+        }
+        if invalid:
+            raise serializers.ValidationError(invalid)
+        return super().to_internal_value(data)
+
+    def validate_correo_electronico(self, value):
+        return value.strip().lower()
+
+
+class CambiarContrasenaSerializer(serializers.Serializer):
+    contrasena_actual = serializers.CharField(
+        min_length=8, max_length=128, trim_whitespace=False, write_only=True
+    )
+    nueva_contrasena = serializers.CharField(
+        min_length=8, max_length=128, trim_whitespace=False, write_only=True
+    )
+    confirmar_contrasena = serializers.CharField(
+        min_length=8, max_length=128, trim_whitespace=False, write_only=True
+    )
+
+    def to_internal_value(self, data):
+        if not isinstance(data, dict):
+            raise serializers.ValidationError(
+                {"non_field_errors": ["Se requiere un objeto JSON."]}
+            )
+        extra = sorted(set(data) - set(self.fields))
+        if extra:
+            raise serializers.ValidationError(
+                {name: ["Este campo no está permitido."] for name in extra}
+            )
+        invalid = {
+            name: ["Debe ser una cadena de texto."]
+            for name in self.fields
+            if name in data and not isinstance(data[name], str)
+        }
+        if invalid:
+            raise serializers.ValidationError(invalid)
+        return super().to_internal_value(data)
+
+    def validate(self, attrs):
+        password = attrs["nueva_contrasena"]
+        confirmation = attrs["confirmar_contrasena"]
+        if password != confirmation:
+            raise serializers.ValidationError(
+                {"confirmar_contrasena": ["Las contraseñas no coinciden."]}
+            )
+        if not password.strip():
+            raise serializers.ValidationError(
+                {"nueva_contrasena": ["No puede contener únicamente espacios."]}
+            )
+        return attrs
+
+
+class RotatingTokenRefreshSerializer(serializers.Serializer):
+    """Renueva access token y rota el refresh token sin blacklist."""
+
+    refresh = serializers.CharField()
+    access = serializers.CharField(read_only=True)
+    rotated = serializers.CharField(read_only=True, source="refresh")
+
+    def validate(self, attrs):
+        try:
+            refresh = RefreshToken(attrs["refresh"])
+        except TokenError as exc:
+            raise serializers.ValidationError({"refresh": [str(exc)]}) from exc
+
+        data = {"access": str(refresh.access_token)}
+        refresh.set_jti()
+        refresh.set_exp()
+        data["refresh"] = str(refresh)
+        return data

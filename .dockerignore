@@ -1,0 +1,20 @@
+# Contexto exclusivo del backend: nunca enviar secretos ni documentación personal.
+**
+!backend/
+!backend/**
+!database/
+!database/schema_desplegado.sql
+
+**/.env
+**/.env.*
+**/.venv
+**/venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.coverage*
+**/*.log
+**/*.bak
+**/*.tmp
+backend/almacenamiento/tests_locales
+backend/almacenamiento/resultados_pruebas

@@ -1,8 +1,7 @@
 import axios from 'axios'
+import { API_BASE_URL, PREFIJO_API } from './configuracionApi'
+import { ErrorApi, convertirEnErrorApi } from './errorApi'
 import type { DatosLogin, DatosRecuperacion, DatosRegistro, RespuestaLogin, UsuarioAutenticado } from './tiposAuth'
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, '')
-  || (import.meta.env.DEV ? 'http://127.0.0.1:8000' : '')
 
 interface RespuestaLoginApi {
   data: {
@@ -18,10 +17,20 @@ interface RespuestaLoginApi {
   }
 }
 
+interface RespuestaRenovacionApi {
+  data: {
+    access: string
+    refresh?: string
+  }
+}
+
 interface SesionActiva {
   usuario: UsuarioAutenticado
   accessToken: string
   venceEnMs: number
+  refreshToken: string
+  /** 0 significa que no pudimos leer la fecha del refresh token; en ese caso decide el servidor. */
+  refreshVenceEnMs: number
 }
 
 let sesionActiva: SesionActiva | null = null
@@ -85,8 +94,14 @@ function vencimientoJwt(token: string): number {
   }
 }
 
+/**
+ * Devuelve la sesión mientras el refresh token siga vigente. El access token dura 15 minutos,
+ * pero se renueva solo (ver clienteApi.ts), así que su vencimiento ya no cierra la sesión.
+ */
 export function obtenerSesion(): SesionActiva | null {
-  if (sesionActiva && Date.now() < sesionActiva.venceEnMs) return sesionActiva
+  if (sesionActiva && (sesionActiva.refreshVenceEnMs === 0 || Date.now() < sesionActiva.refreshVenceEnMs)) {
+    return sesionActiva
+  }
   sesionActiva = null
   return null
 }
@@ -101,7 +116,7 @@ export function cerrarSesion(): void {
 export async function registrarUsuario(datos: DatosRegistro): Promise<UsuarioAutenticado> {
   try {
     const respuesta = await axios.post<RespuestaRegistroApi>(
-      `${API_BASE_URL}/api/v1/auth/registro/`,
+      `${API_BASE_URL}${PREFIJO_API}/auth/registro/`,
       {
         nombre_completo: datos.nombreCompleto.trim(),
         correo_electronico: datos.correoElectronico.trim().toLowerCase(),
@@ -150,7 +165,7 @@ export async function registrarUsuario(datos: DatosRegistro): Promise<UsuarioAut
 export async function iniciarSesion(datos: DatosLogin): Promise<RespuestaLogin> {
   try {
     const respuesta = await axios.post<RespuestaLoginApi>(
-      `${API_BASE_URL}/api/v1/auth/login/`,
+      `${API_BASE_URL}${PREFIJO_API}/auth/login/`,
       {
         correo: datos.correoElectronico.trim().toLowerCase(),
         contrasena: datos.contrasena,
@@ -171,7 +186,13 @@ export async function iniciarSesion(datos: DatosLogin): Promise<RespuestaLogin> 
       nombreCompleto: data.usuario.nombre_completo,
       correoElectronico: data.usuario.correo_electronico,
     }
-    sesionActiva = { usuario, accessToken: data.tokens.access, venceEnMs }
+    sesionActiva = {
+      usuario,
+      accessToken: data.tokens.access,
+      venceEnMs,
+      refreshToken: data.tokens.refresh,
+      refreshVenceEnMs: vencimientoJwt(data.tokens.refresh),
+    }
     return {
       accessToken: data.tokens.access,
       refreshToken: data.tokens.refresh,
@@ -207,7 +228,7 @@ export async function iniciarSesion(datos: DatosLogin): Promise<RespuestaLogin> 
 export async function recuperarContrasena(datos: DatosRecuperacion): Promise<void> {
   try {
     const respuesta = await axios.post<{ mensaje: string }>(
-      `${API_BASE_URL}/api/v1/auth/recuperar-contrasena/`,
+      `${API_BASE_URL}${PREFIJO_API}/auth/recuperar-contrasena/`,
       {
         correo: datos.correoElectronico.trim().toLowerCase(),
         palabra_secreta: datos.palabraSecreta,
@@ -244,5 +265,67 @@ export async function recuperarContrasena(datos: DatosRecuperacion): Promise<voi
       throw new ErrorRecuperacion('No se pudo conectar con la API. Revisa tu conexión e intenta de nuevo.')
     }
     throw new ErrorRecuperacion('No se pudo restablecer la contraseña. Intenta de nuevo.')
+  }
+}
+
+let renovacionEnCurso: Promise<string> | null = null
+
+async function solicitarNuevoAccessToken(): Promise<string> {
+  const sesion = obtenerSesion()
+  if (!sesion) throw new ErrorApi('TOKEN_INVALIDO')
+
+  try {
+    const respuesta = await axios.post<RespuestaRenovacionApi>(
+      `${API_BASE_URL}${PREFIJO_API}/auth/refresh/`,
+      { refresh: sesion.refreshToken },
+      { headers: { 'Content-Type': 'application/json' }, withCredentials: false },
+    )
+    const { access, refresh } = respuesta.data.data
+    const venceEnMs = vencimientoJwt(access)
+    if (venceEnMs <= Date.now()) throw new ErrorApi('TOKEN_INVALIDO')
+
+    sesionActiva = {
+      ...sesion,
+      accessToken: access,
+      venceEnMs,
+      refreshToken: refresh ?? sesion.refreshToken,
+      refreshVenceEnMs: refresh ? vencimientoJwt(refresh) : sesion.refreshVenceEnMs,
+    }
+    return access
+  } catch (error) {
+    throw convertirEnErrorApi(error)
+  }
+}
+
+/**
+ * Pide un access token nuevo con el refresh token (POST /auth/refresh/).
+ * Si varias peticiones fallan a la vez, todas comparten una sola renovación.
+ */
+export function renovarAccessToken(): Promise<string> {
+  if (!renovacionEnCurso) {
+    renovacionEnCurso = solicitarNuevoAccessToken().finally(() => {
+      renovacionEnCurso = null
+    })
+  }
+  return renovacionEnCurso
+}
+
+/**
+ * Cierra la sesión: la borra de la memoria y avisa al servidor para invalidar el refresh token
+ * (POST /auth/logout/). Si el servidor no responde, la sesión local se cierra igual.
+ */
+export async function cerrarSesionEnServidor(): Promise<void> {
+  const sesion = obtenerSesion()
+  cerrarSesion()
+  if (!sesion) return
+
+  try {
+    await axios.post(
+      `${API_BASE_URL}${PREFIJO_API}/auth/logout/`,
+      { refresh: sesion.refreshToken },
+      { headers: { Authorization: `Bearer ${sesion.accessToken}` }, withCredentials: false },
+    )
+  } catch {
+    // Mejor esfuerzo: el usuario ya salió de la app aunque el servidor no haya podido registrarlo.
   }
 }

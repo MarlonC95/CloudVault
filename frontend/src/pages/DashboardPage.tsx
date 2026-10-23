@@ -1,158 +1,244 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import {
-  Cloud,
-  Upload,
-  HardDrive,
-  Users,
-  Clock,
-  Trash2,
-  Zap,
-  Shield,
-  LogOut,
-} from 'lucide-react'
-import { cerrarSesion, obtenerSesion } from '../services/authService'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { ChevronLeft, Folder as FolderIcon } from 'lucide-react'
+import { useArchivos } from '../context/archivosContexto'
+import { subirArchivo, obtenerUrlDescarga } from '../services/archivosService'
+import { convertirEnErrorApi, obtenerMensajeDeCampo } from '../services/errorApi'
+import { formatearTamanoBytes } from '../utils/formatoArchivo'
+import type { RangoFecha, RangoTamano } from '../utils/filtrosArchivos'
+import type { Archivo, CargaEnProgreso, TipoArchivo } from '../types/archivo'
+import DashboardLayout from '../components/layout/DashboardLayout'
+import BuscadorArchivos from '../components/dashboard/BuscadorArchivos'
+import TarjetaCarpeta from '../components/dashboard/TarjetaCarpeta'
+import TarjetaNuevaCarpeta from '../components/dashboard/TarjetaNuevaCarpeta'
+import ModalNuevaCarpeta from '../components/dashboard/ModalNuevaCarpeta'
+import TablaArchivos from '../components/dashboard/TablaArchivos'
+import PanelDetalleArchivo from '../components/dashboard/PanelDetalleArchivo'
+import NotificacionCargas from '../components/dashboard/NotificacionCargas'
+import ModalSubirArchivo from '../components/dashboard/ModalSubirArchivo'
+import ModalCompartir from '../components/dashboard/ModalCompartir'
+import ModalMoverArchivo from '../components/dashboard/ModalMoverArchivo'
 
-type SeccionExplorador = 'mi-unidad' | 'compartidos' | 'recientes' | 'papelera' | 'planes' | 'administracion'
+type FiltroTipo = TipoArchivo | 'todos'
 
-const COLOR_MARCA = '#2563EB'
-const COLOR_NAVY = '#0F172A'
-
-interface ElementoMenu {
-  id: SeccionExplorador
-  etiqueta: string
-  icono: React.ReactNode
+interface EstadoNavegacionDashboard {
+  abrirSubida?: boolean
 }
 
-const ELEMENTOS_EXPLORADOR: ElementoMenu[] = [
-  { id: 'mi-unidad', etiqueta: 'Mi Unidad', icono: <HardDrive size={18} /> },
-  { id: 'compartidos', etiqueta: 'Compartidos conmigo', icono: <Users size={18} /> },
-  { id: 'recientes', etiqueta: 'Recientes', icono: <Clock size={18} /> },
-]
-
-const ELEMENTOS_GESTION: ElementoMenu[] = [
-  { id: 'papelera', etiqueta: 'Papelera', icono: <Trash2 size={18} /> },
-  { id: 'planes', etiqueta: 'Planes', icono: <Zap size={18} /> },
-  { id: 'administracion', etiqueta: 'Administración', icono: <Shield size={18} /> },
-]
-
 function DashboardPage() {
-  const [seccionActiva, setSeccionActiva] = useState<SeccionExplorador>('mi-unidad')
   const navegar = useNavigate()
-  const usuario = obtenerSesion()?.usuario
+  const ubicacion = useLocation()
+  const { carpetas, archivos, cargando, error, refrescar, crearCarpeta, moverArchivo, enviarAPapelera } = useArchivos()
 
-  function manejarSalida() {
-    cerrarSesion()
-    navegar('/login', { replace: true })
+  // El botón "Subir Archivo" del menú, desde otras pantallas, nos trae aquí con la ventana de subida pedida.
+  const debeAbrirSubida = (ubicacion.state as EstadoNavegacionDashboard | null)?.abrirSubida === true
+
+  const [carpetaActivaId, setCarpetaActivaId] = useState<string | null>(null)
+  const [busqueda, setBusqueda] = useState('')
+  const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
+  const [filtroFecha, setFiltroFecha] = useState<RangoFecha>('cualquiera')
+  const [filtroTamano, setFiltroTamano] = useState<RangoTamano>('cualquiera')
+  const [archivoSeleccionado, setArchivoSeleccionado] = useState<Archivo | null>(null)
+  const [archivoParaCompartir, setArchivoParaCompartir] = useState<Archivo | null>(null)
+  const [archivoParaMover, setArchivoParaMover] = useState<Archivo | null>(null)
+  const [mostrarModalSubida, setMostrarModalSubida] = useState(debeAbrirSubida)
+  const [mostrarModalNuevaCarpeta, setMostrarModalNuevaCarpeta] = useState(false)
+  const [cargas, setCargas] = useState<CargaEnProgreso[]>([])
+  const [errorAccion, setErrorAccion] = useState<string | null>(null)
+  const [ahora] = useState(() => Date.now())
+
+  useEffect(() => {
+    // Limpiamos el aviso para que la ventana no se reabra al recargar o volver atrás
+    if (debeAbrirSubida) {
+      navegar(ubicacion.pathname, { replace: true, state: null })
+    }
+  }, [debeAbrirSubida, navegar, ubicacion.pathname])
+
+  const carpetaActiva = carpetas.find((carpeta) => carpeta.id === carpetaActivaId) ?? null
+
+  const archivosFiltrados = archivos
+    .filter((archivo) => !archivo.enPapelera)
+    .filter((archivo) => carpetaActivaId === null || archivo.carpetaId === carpetaActivaId)
+    .filter((archivo) => archivo.nombre.toLowerCase().includes(busqueda.toLowerCase()))
+    .filter((archivo) => filtroTipo === 'todos' || archivo.tipo === filtroTipo)
+    .filter((archivo) => {
+      if (filtroFecha === 'cualquiera') return true
+      const fecha = new Date(archivo.fechaModificacionIso).getTime()
+      if (filtroFecha === 'recientes') return fecha >= ahora - 7 * 86400000
+      if (filtroFecha === 'este-mes') return new Date(archivo.fechaModificacionIso).getMonth() === new Date(ahora).getMonth()
+        && new Date(archivo.fechaModificacionIso).getFullYear() === new Date(ahora).getFullYear()
+      return fecha < ahora - 30 * 86400000
+    })
+    .filter((archivo) => {
+      if (filtroTamano === 'cualquiera') return true
+      const mb = archivo.tamanoBytes / (1024 * 1024)
+      return filtroTamano === 'pequeno' ? mb < 1 : filtroTamano === 'mediano' ? mb >= 1 && mb < 100 : mb >= 100
+    })
+
+  async function manejarDescargar(archivo: Archivo) {
+    try {
+      setErrorAccion(null)
+      const descarga = await obtenerUrlDescarga(archivo.id)
+      if (!descarga.url) throw new Error('La API no devolvió una URL de descarga.')
+      const enlace = document.createElement('a')
+      enlace.href = descarga.url
+      enlace.download = descarga.nombre ?? archivo.nombre
+      document.body.appendChild(enlace)
+      enlace.click()
+      enlace.remove()
+    } catch (causa) { setErrorAccion(causa instanceof Error && causa.message.startsWith('La API') ? causa.message : convertirEnErrorApi(causa).message) }
   }
 
-  // TODO: reemplazar por datos reales del plan del usuario cuando exista la API
-  const almacenamientoUsadoGb = 45
-  const almacenamientoTotalGb = 100
-  const porcentajeUsado = (almacenamientoUsadoGb / almacenamientoTotalGb) * 100
+  async function manejarEliminar(archivo: Archivo) {
+    try {
+      await enviarAPapelera(archivo.id)
+      if (archivoSeleccionado?.id === archivo.id) setArchivoSeleccionado(null)
+    } catch (causa) { setErrorAccion(convertirEnErrorApi(causa).message) }
+  }
 
-  function renderizarBotonMenu(elemento: ElementoMenu) {
-    const estaActivo = seccionActiva === elemento.id
-    return (
-      <button
-        key={elemento.id}
-        type="button"
-        className="btn d-flex align-items-center gap-2 w-100 text-start mb-1 border-0"
-        style={{
-          backgroundColor: estaActivo ? 'rgba(255,255,255,0.1)' : 'transparent',
-          color: estaActivo ? '#FFFFFF' : 'rgba(255,255,255,0.7)',
-          borderRadius: '10px',
-          padding: '10px 14px',
-        }}
-        onClick={() => setSeccionActiva(elemento.id)}
-      >
-        {elemento.icono}
-        <span className="small fw-medium">{elemento.etiqueta}</span>
-      </button>
-    )
+  async function manejarMover(archivo: Archivo, nuevaCarpetaId: string | null) {
+    try {
+      await moverArchivo(archivo.id, nuevaCarpetaId)
+      setArchivoParaMover(null)
+    } catch (causa) { setErrorAccion(convertirEnErrorApi(causa).message); throw causa }
+  }
+
+  async function manejarCrearCarpeta(nombre: string) {
+    try {
+      await crearCarpeta(nombre)
+      setMostrarModalNuevaCarpeta(false)
+    } catch (causa) {
+      const errorApi = convertirEnErrorApi(causa)
+      setErrorAccion(obtenerMensajeDeCampo(errorApi, 'nombre') ?? errorApi.message)
+      throw causa
+    }
+  }
+
+  function manejarConfirmarSubida(archivosSubidos: File[]) {
+    const entradas = archivosSubidos.map((archivo) => ({ archivo, id: crypto.randomUUID() }))
+    setCargas((anteriores) => [...anteriores, ...entradas.map(({ archivo, id }) => ({ id, nombreArchivo: archivo.name, tamano: formatearTamanoBytes(archivo.size), progreso: 0, estado: 'en-cola' as const }))])
+    setMostrarModalSubida(false)
+    void (async () => {
+      for (const { archivo, id } of entradas) {
+        setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, estado: 'subiendo' } : carga))
+        try {
+          await subirArchivo(archivo, carpetaActivaId, (progreso) => setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, progreso } : carga)))
+          setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, progreso: 100, estado: 'completado' } : carga))
+          await refrescar()
+        } catch (causa) {
+          const mensajeError = convertirEnErrorApi(causa).message
+          setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, estado: 'error', mensajeError } : carga))
+        }
+      }
+    })()
   }
 
   return (
-    <div className="d-flex" style={{ minHeight: '100vh' }}>
-      {/* Sidebar */}
-      <aside
-        className="d-none d-lg-flex flex-column p-3 text-white flex-shrink-0"
-        style={{ width: '260px', backgroundColor: COLOR_NAVY }}
-      >
-        <div className="d-flex align-items-center gap-2 mb-4 px-2">
-          <Cloud size={26} color={COLOR_MARCA} />
-          <span className="fw-bold fs-5">CloudVault PaaS</span>
-        </div>
+    <DashboardLayout seccionActiva="mi-unidad" onClickSubirArchivo={() => setMostrarModalSubida(true)}>
+      <div style={{ flex: 1, padding: 28, display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
+        {cargando && <div role="status" style={{ color: '#64748B', fontSize: 13 }}>Cargando archivos y carpetas...</div>}
+        {(error || errorAccion) && <div role="alert" style={{ color: '#DC2626', fontSize: 13 }}>{errorAccion || error} <button type="button" onClick={() => { setErrorAccion(null); void refrescar().catch(() => undefined) }}>Reintentar</button></div>}
+        <BuscadorArchivos
+          valorBusqueda={busqueda}
+          onCambiarBusqueda={setBusqueda}
+          filtroTipo={filtroTipo}
+          onCambiarFiltroTipo={setFiltroTipo}
+          filtroFecha={filtroFecha}
+          onCambiarFiltroFecha={setFiltroFecha}
+          filtroTamano={filtroTamano}
+          onCambiarFiltroTamano={setFiltroTamano}
+        />
 
-        <button
-          type="button"
-          className="btn w-100 d-flex justify-content-center align-items-center gap-2 text-white fw-semibold mb-4"
-          style={{ backgroundColor: COLOR_MARCA, borderRadius: '10px', padding: '10px' }}
-        >
-          <Upload size={18} />
-          Subir Archivo
-        </button>
-
-        <div className="text-uppercase small fw-semibold px-2 mb-2" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}>
-          Explorador
-        </div>
-        {ELEMENTOS_EXPLORADOR.map(renderizarBotonMenu)}
-
-        <div className="text-uppercase small fw-semibold px-2 mb-2 mt-4" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '11px' }}>
-          Gestión
-        </div>
-        {ELEMENTOS_GESTION.map(renderizarBotonMenu)}
-
-        <div className="mt-auto pt-4">
-          <div
-            className="p-3"
-            style={{ backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}
-          >
-            <div className="d-flex justify-content-between small mb-2">
-              <span className="fw-semibold">Almacenamiento</span>
-              <span style={{ color: 'rgba(255,255,255,0.6)' }}>
-                {almacenamientoUsadoGb}/{almacenamientoTotalGb} GB
-              </span>
-            </div>
-            <div
-              className="mb-2"
-              style={{ height: '6px', borderRadius: '3px', backgroundColor: 'rgba(255,255,255,0.15)' }}
-            >
-              <div
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {carpetaActiva ? (
+              <button
+                type="button"
+                onClick={() => setCarpetaActivaId(null)}
                 style={{
-                  height: '100%',
-                  width: `${porcentajeUsado}%`,
-                  borderRadius: '3px',
-                  backgroundColor: COLOR_MARCA,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: '#2563EB',
                 }}
-              />
-            </div>
-            <p className="small mb-3" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              {almacenamientoTotalGb - almacenamientoUsadoGb} GB disponibles
-            </p>
-            <button
-              type="button"
-              className="btn btn-outline-light w-100 btn-sm fw-semibold"
-              style={{ borderRadius: '8px' }}
-            >
-              Ampliar Plan
-            </button>
-          </div>
-        </div>
-      </aside>
+              >
+                <ChevronLeft size={16} />
+                Mi Unidad
+                <span style={{ color: '#CBD5E1' }}>/</span>
+                <FolderIcon size={14} color={carpetaActiva.color} />
+                {carpetaActiva.nombre}
+              </button>
+            ) : (
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#64748B', letterSpacing: '0.07em', marginBottom: 12 }}>
+                  CARPETAS PRINCIPALES
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                  {carpetas.map((carpeta) => (
+                    <TarjetaCarpeta
+                      key={carpeta.id}
+                      carpeta={carpeta}
+                      cantidadArchivos={carpeta.cantidadArchivos}
+                      estaActiva={carpeta.id === carpetaActivaId}
+                      onClick={() => setCarpetaActivaId(carpeta.id)}
+                    />
+                  ))}
+                  <TarjetaNuevaCarpeta onClick={() => setMostrarModalNuevaCarpeta(true)} />
+                </div>
+              </div>
+            )}
 
-      {/* Contenido principal: se arma en el siguiente paso */}
-      <main className="flex-grow-1 p-4" style={{ backgroundColor: '#F1F5F9' }}>
-        <div className="d-flex justify-content-between align-items-center gap-3 mb-4">
-          <h1 className="fs-4 mb-0">Hola, {usuario?.nombreCompleto}</h1>
-          <button type="button" className="btn btn-outline-secondary d-flex align-items-center gap-2" onClick={manejarSalida}>
-            <LogOut size={18} /> Cerrar sesión
-          </button>
+            <TablaArchivos
+              archivos={archivosFiltrados}
+              archivoSeleccionadoId={archivoSeleccionado?.id ?? null}
+              onSeleccionarArchivo={setArchivoSeleccionado}
+              onDescargar={manejarDescargar}
+              onCompartir={setArchivoParaCompartir}
+              onEliminar={manejarEliminar}
+              onMover={setArchivoParaMover}
+              titulo={carpetaActiva ? carpetaActiva.nombre.toUpperCase() : 'TODOS LOS ARCHIVOS'}
+            />
+          </div>
+
+          <PanelDetalleArchivo
+            archivo={archivoSeleccionado}
+            onDescargar={manejarDescargar}
+            onCompartir={setArchivoParaCompartir}
+            onEliminar={manejarEliminar}
+            onMover={setArchivoParaMover}
+          />
         </div>
-        <p className="text-secondary">Sección activa: {seccionActiva}</p>
-        {/* TODO: tabla de archivos, tarjetas de carpetas y panel de detalles */}
-      </main>
-    </div>
+      </div>
+
+      <NotificacionCargas cargas={cargas} onDescartar={(id) => setCargas((anteriores) => anteriores.filter((carga) => carga.id !== id))} />
+
+      <ModalSubirArchivo
+        visible={mostrarModalSubida}
+        onCerrar={() => setMostrarModalSubida(false)}
+        onConfirmarSubida={manejarConfirmarSubida}
+      />
+
+      <ModalCompartir archivo={archivoParaCompartir} onCerrar={() => setArchivoParaCompartir(null)} />
+
+      <ModalMoverArchivo
+        archivo={archivoParaMover}
+        carpetas={carpetas}
+        onCerrar={() => setArchivoParaMover(null)}
+        onMover={manejarMover}
+      />
+
+      <ModalNuevaCarpeta
+        visible={mostrarModalNuevaCarpeta}
+        onCerrar={() => setMostrarModalNuevaCarpeta(false)}
+        onCrear={manejarCrearCarpeta}
+      />
+    </DashboardLayout>
   )
 }
 

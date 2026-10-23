@@ -1,10 +1,12 @@
 services:
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     image: cloudvault-backend:dev
+    init: true
     env_file:
-      - ./backend/.env.docker
+      - ${CLOUDVAULT_ENV_FILE:-./backend/.env}
     environment:
       DJANGO_DEBUG: "True"
       DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,backend"
@@ -12,21 +14,34 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
+      - ./backend:/app:z
     command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/planes/', timeout=8).close()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
 
   frontend:
     build:
       context: ./frontend
     image: cloudvault-frontend:dev
+    init: true
     ports:
       - "5173:5173"
     environment:
-      VITE_API_BASE_URL: "http://localhost:8000"
+      VITE_API_BASE_URL: "${VITE_API_BASE_URL:-http://localhost:8000}"
     volumes:
-      - ./frontend:/app
+      - ./frontend:/app:z
       - frontend_node_modules:/app/node_modules
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
 
 volumes:
   frontend_node_modules:

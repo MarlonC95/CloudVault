@@ -27,6 +27,9 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "auth_workspaces",
+    "almacenamiento",
+    "storage",
+    "subscriptions",
 ]
 
 MIDDLEWARE = [
@@ -45,6 +48,15 @@ CORS_URLS_REGEX = r"^/api/"
 CORS_ALLOW_CREDENTIALS = False
 
 ROOT_URLCONF = "config.urls"
+# Solo habilitar después de integrar apps/modelos de negocio compatibles.
+# El orden dentro de config.urls mantiene la carga antes del router general.
+# Proveedor real de destino/cuota/metadatos que consume almacenamiento (módulo storage).
+ALMACENAMIENTO_SERVICIOS_FACTORY = env(
+    "ALMACENAMIENTO_SERVICIOS_FACTORY", default="storage.servicios.crear_servicios"
+)
+ALMACENAMIENTO_URLCONFS_NEGOCIO = env.list(
+    "ALMACENAMIENTO_URLCONFS_NEGOCIO", default=["storage.urls", "subscriptions.urls"]
+)
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -134,7 +146,7 @@ USE_TZ = True
 TIME_ZONE = "UTC"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LANGUAGE_CODE = "es"
-TEST_RUNNER = "config.test_runner.CloudVaultTestRunner"
+TEST_RUNNER = "common.test_runner.CloudVaultTestRunner"
 
 SECURE_SSL_REDIRECT = not DEBUG
 SESSION_COOKIE_SECURE = not DEBUG

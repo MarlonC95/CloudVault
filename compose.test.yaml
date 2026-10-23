@@ -1,0 +1,57 @@
+# Suite aislada: nunca carga .env, publica PostgreSQL ni usa la BD compartida.
+name: cloudvault-tests
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: cloudvault_test
+      POSTGRES_DB: cloudvault_test
+      # Solo la red interna desechable puede conectarse a este servidor.
+      POSTGRES_HOST_AUTH_METHOD: trust
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cloudvault_test", "-d", "cloudvault_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+    networks:
+      - tests
+
+  tests:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: cloudvault-backend:dev
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DJANGO_SECRET_KEY: isolated-docker-tests-not-a-runtime-secret-key
+      DJANGO_DEBUG: "True"
+      DATABASE_URL: ""
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: cloudvault_test
+      DB_TEST_NAME: test_cloudvault_docker
+      DB_USER: cloudvault_test
+      DB_PASSWORD: ""
+      DB_SSLMODE: disable
+      AWS_EC2_METADATA_DISABLED: "true"
+    # La suite heredada usa /private/tmp; se mantiene dentro del contenedor.
+    tmpfs:
+      - /private/tmp:mode=1777
+    command:
+      - sh
+      - -ec
+      - |
+        python manage.py test common auth_workspaces storage subscriptions --noinput --verbosity=1
+        python -m django test almacenamiento.tests --settings=almacenamiento.tests.settings --noinput --verbosity=1
+    networks:
+      - tests
+
+networks:
+  tests:
+    internal: true

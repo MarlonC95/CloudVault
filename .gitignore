@@ -27,6 +27,17 @@ build/
 # IDEs & System
 .idea/
 .vscode/
+.obsidian/
+
+# Documentación personal de trabajo con el asistente.
+# Se conserva solo OpenAPI y el SQL que requieren tests/Docker.
+/agent.md
+/agente/*
+!/agente/contrato-fase-01.openapi.json
+!/agente/referencias/
+/agente/referencias/*
+!/agente/referencias/esquema-vigente.sql
+/auditoria/
 *.swp
 *.swo
 .DS_Store
@@ -44,4 +55,22 @@ htmlcov/
 .coverage
 .pytest_cache/
 coverage/
+.coverage.*
+coverage.xml
+test-results/
+.mypy_cache/
+.ruff_cache/
 
+# Resultados y ensayos personales; los tests automáticos sí se versionan.
+/backend/almacenamiento/tests_locales/
+/backend/almacenamiento/resultados_pruebas/
+cloudvault-cors-*.json
+cloudvault-fase*-*.json
+cors-anterior.json
+cors-propuesta.json
+cors-restaurable.json
+*.log
+*.bak
+*.tmp
+*.orig
+*.rej

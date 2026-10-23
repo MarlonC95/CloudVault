@@ -1,0 +1,276 @@
+"""Cliente técnico de Dani. El coordinador autoriza/reserva antes de firmar.
+
+No accede a SQL, no monta vistas y no sustituye permisos de German.
+"""
+
+import hashlib
+import re
+import unicodedata
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from uuid import UUID, uuid4
+from urllib.parse import parse_qs, quote, urlsplit
+
+import boto3
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
+
+from .configuracion_s3 import ConfiguracionS3
+from .contrato import CodigoError, PoliticaCarga, MIME_PATRON, NOMBRE_MAXIMO, NOMBRE_PATRON
+from .errores import ErrorCarga
+from .validacion import validar_texto_tecnico
+
+
+PREFIJO_PROPIO = "cloudvault/dani/"
+_UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+_TECNICA = re.compile(rf"cloudvault/dani/(?:(?:temporales|publicaciones)/{_UUID}|pruebas/{_UUID}/{_UUID})\Z")
+
+
+class ErrorS3(ErrorCarga):
+    def __init__(self, tipo="servicio"):
+        self.tipo = tipo
+        super().__init__(CodigoError.NO_ENCONTRADO if tipo == "ausente"
+                         else CodigoError.SERVICE_UNAVAILABLE)
+
+
+@dataclass(frozen=True)
+class FirmaS3:
+    url: str = field(repr=False)
+    metodo: str
+    encabezados: dict
+    expira_en: datetime
+
+
+@dataclass(frozen=True)
+class ObjetoS3:
+    tamano_bytes: int
+    tipo_mime: str
+    etag: str
+    version: str | None = None
+    checksum_sha256: str | None = None  # Base64 del proveedor; no es hex ni ETag.
+
+
+@dataclass(frozen=True)
+class ContenidoS3:
+    tamano_bytes: int
+    sha256: str
+
+
+def nueva_clave_temporal():
+    return f"{PREFIJO_PROPIO}temporales/{uuid4()}"
+
+
+def nueva_clave_final(archivo_id):
+    return f"{PREFIJO_PROPIO}publicaciones/{UUID(str(archivo_id))}"
+
+
+def disposicion_adjunto(nombre):
+    """Header ASCII seguro: fallback acotado y filename* UTF-8 percent-encoded."""
+    if (not isinstance(nombre, str) or len(nombre) > NOMBRE_MAXIMO
+            or not re.fullmatch(NOMBRE_PATRON, nombre)):
+        raise ValueError("Nombre inválido para descarga")
+    nombre = nombre.strip()
+    try:
+        unicode_seguro = quote(nombre, safe="", encoding="utf-8", errors="strict")
+    except UnicodeError:
+        raise ValueError("Nombre inválido para descarga") from None
+    ascii_nombre = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode()
+    fallback = re.sub(r"[^A-Za-z0-9._ -]", "_", ascii_nombre)[:150].strip(" .") or "archivo"
+    return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{unicode_seguro}'
+
+
+def _clave(clave, *, propia=False):
+    validar_texto_tecnico(clave, 255, "clave S3")
+    if clave.startswith("/") or "\\" in clave or any(p in {"", ".", ".."} for p in clave.split("/")):
+        raise ValueError("Clave S3 inválida.")
+    if propia and not _TECNICA.fullmatch(clave):
+        raise ValueError("La operación requiere una clave técnica propia.")
+    return clave
+
+
+class ClienteS3:
+    def __init__(self, configuracion: ConfiguracionS3, *, politica=None):
+        self.configuracion = configuracion
+        self.politica = politica or PoliticaCarga()
+        config = Config(
+            signature_version="s3v4", connect_timeout=5, read_timeout=15,
+            retries={"mode": "standard", "total_max_attempts": 3},
+            s3={"addressing_style": configuracion.estilo},
+            request_checksum_calculation="when_required",
+            response_checksum_validation="when_required",
+        )
+        # Credenciales explícitas: no usa perfiles AWS locales ni metadata IAM.
+        session = boto3.session.Session()
+        opciones = dict(region_name=configuracion.region,
+                        aws_access_key_id=configuracion.access_key,
+                        aws_secret_access_key=configuracion.secret_key,
+                        config=config, verify=True)
+        self._cliente = session.client("s3", endpoint_url=configuracion.endpoint, **opciones)
+        self._firmador = (self._cliente if configuracion.endpoint_firma == configuracion.endpoint
+                         else session.client("s3", endpoint_url=configuracion.endpoint_firma, **opciones))
+
+    def cerrar(self):
+        self._cliente.close()
+        if self._firmador is not self._cliente:
+            self._firmador.close()
+
+    def _operar(self, metodo, **parametros):
+        try:
+            return getattr(self._cliente, metodo)(Bucket=self.configuracion.bucket, **parametros)
+        except ClientError as exc:
+            codigo = exc.response.get("Error", {}).get("Code", "")
+            tipo = ("ausente" if codigo in {"404", "NoSuchKey", "NotFound"}
+                    else "precondicion" if codigo in {"412", "PreconditionFailed"}
+                    else "acceso" if codigo in {"403", "AccessDenied", "InvalidAccessKeyId", "SignatureDoesNotMatch"}
+                    else "servicio")
+            raise ErrorS3(tipo) from None
+        except BotoCoreError:
+            raise ErrorS3() from None
+
+    def _firmar(self, operacion, clave, vigencia, maximo, *, mime=None, respuesta=None):
+        _clave(clave, propia=operacion == "put_object")
+        if operacion == "put_object" and "/publicaciones/" in clave:
+            raise ValueError("No se firma PUT sobre una publicación.")
+        if type(vigencia) is not int or not 0 < vigencia <= maximo:
+            raise ValueError("Vigencia de firma inválida.")
+        parametros = {"Bucket": self.configuracion.bucket, "Key": clave}
+        if respuesta:
+            if operacion != "get_object":
+                raise ValueError("Headers de respuesta solo para descarga")
+            parametros.update(respuesta)
+        headers = {}
+        if mime is not None:
+            if not isinstance(mime, str) or len(mime) > 100 or not re.fullmatch(MIME_PATRON, mime):
+                raise ValueError("MIME inválido.")
+            parametros["ContentType"] = mime
+            headers["Content-Type"] = mime
+        metodo = "PUT" if operacion == "put_object" else "GET"
+        try:
+            url = self._firmador.generate_presigned_url(
+                operacion, Params=parametros, ExpiresIn=vigencia, HttpMethod=metodo)
+        except (BotoCoreError, ClientError):
+            raise ErrorS3() from None
+        # La fecha de respuesta debe coincidir con el timestamp del SDK, incluso
+        # si generar la firma cruza un segundo. Nunca recalcular desde otro reloj.
+        try:
+            query = parse_qs(urlsplit(url).query)
+            if len(query["X-Amz-Date"]) != 1 or query.get("X-Amz-Expires") != [str(vigencia)]:
+                raise ValueError("Firma temporal incoherente")
+            fecha = datetime.strptime(query["X-Amz-Date"][0], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+        except (KeyError, ValueError, TypeError):
+            raise ErrorS3() from None
+        return FirmaS3(url, metodo, headers, fecha + timedelta(seconds=vigencia))
+
+    def firmar_put(self, clave, tipo_mime, *, vigencia=None):
+        return self._firmar("put_object", clave,
+                            self.politica.vigencia_carga_segundos if vigencia is None else vigencia,
+                            self.politica.vigencia_carga_segundos, mime=tipo_mime)
+
+    def firmar_get(self, clave, *, vigencia=None):
+        return self._firmar("get_object", clave,
+                            self.politica.vigencia_descarga_segundos if vigencia is None else vigencia,
+                            self.politica.vigencia_descarga_segundos)
+
+    def firmar_descarga(self, clave, nombre, *, vigencia=None, version=None):
+        _clave(clave, propia=True)
+        if "/publicaciones/" not in clave:
+            raise ValueError("La descarga requiere publicación propia")
+        respuesta = {"ResponseContentDisposition": disposicion_adjunto(nombre),
+                     "ResponseContentType": "application/octet-stream",
+                     "ResponseCacheControl": "private, no-store"}
+        if version is not None:
+            validar_texto_tecnico(version, 255, "Versión final")
+            respuesta["VersionId"] = version
+        return self._firmar("get_object", clave,
+                            self.politica.vigencia_descarga_segundos if vigencia is None else vigencia,
+                            self.politica.vigencia_descarga_segundos, respuesta=respuesta)
+
+    def consultar(self, clave):
+        respuesta = self._operar("head_object", Key=_clave(clave))
+        tamano, etag = respuesta.get("ContentLength"), respuesta.get("ETag")
+        if type(tamano) is not int or tamano < 0 or not isinstance(etag, str) or not etag:
+            raise ErrorS3()
+        return ObjetoS3(tamano, respuesta.get("ContentType", "application/octet-stream"), etag,
+                        respuesta.get("VersionId"), respuesta.get("ChecksumSHA256"))
+
+    def verificar_contenido(self, clave, *, maximo_bytes):
+        """Lee por bloques para calcular hash real, sin fiarse de MIME/ETag/HEAD.
+
+        Es una primitiva interna para verificación, nunca una vista de subida.
+        """
+        if type(maximo_bytes) is not int or not 0 <= maximo_bytes <= self.politica.maximo_archivo_bytes:
+            raise ValueError("Límite de lectura inválido.")
+        respuesta = self._operar("get_object", Key=_clave(clave))
+        stream = respuesta["Body"]
+        total, sha = 0, hashlib.sha256()
+        try:
+            while True:
+                bloque = stream.read(min(65536, maximo_bytes - total + 1))
+                if not bloque:
+                    break
+                total += len(bloque)
+                if total > maximo_bytes:
+                    raise ErrorS3("contenido")
+                sha.update(bloque)
+        except (BotoCoreError, OSError):
+            raise ErrorS3() from None
+        finally:
+            stream.close()
+        return ContenidoS3(total, sha.hexdigest())
+
+    def copiar(self, origen, destino, *, etag_origen):
+        _clave(origen, propia=True)
+        _clave(destino, propia=True)
+        if origen == destino or not ("/publicaciones/" in destino or "/pruebas/" in destino):
+            raise ValueError("Destino técnico inválido para publicación.")
+        validar_texto_tecnico(etag_origen, 255, "ETag")
+        respuesta = self._operar("copy_object", Key=destino,
+                                  CopySource={"Bucket": self.configuracion.bucket, "Key": origen},
+                                  CopySourceIfMatch=etag_origen)
+        # HTTP 200 no basta: SDK procesa el XML y aquí exigimos resultado.
+        if not respuesta.get("CopyObjectResult", {}).get("ETag"):
+            raise ErrorS3()
+        # No presupone que el proveedor respete la condición: fase 05 debe
+        # verificar contenido/recuperación antes de publicar metadatos.
+        return self.consultar(destino)
+
+    def borrar_tecnico(self, clave):
+        """El coordinador debe probar que no sea una publicación vigente."""
+        try:
+            self._operar("delete_object", Key=_clave(clave, propia=True))
+        except ErrorS3 as exc:
+            if exc.tipo != "ausente":
+                raise
+
+    def publicar_una_vez(self, origen, destino, *, etag_origen):
+        """Una invocación COPY, sin reintentos SDK ni metadatos activos del cliente.
+
+        El coordinador persiste PREPARED antes de llamar. Ante respuesta ambigua
+        solo permite inspeccionar ese destino; jamás repetir esta operación.
+        """
+        _clave(origen, propia=True)
+        _clave(destino, propia=True)
+        if "/temporales/" not in origen or "/publicaciones/" not in destino:
+            raise ValueError("Publicación fuera de las claves propias")
+        validar_texto_tecnico(etag_origen, 255, "ETag")
+        cliente = boto3.session.Session().client(
+            "s3", endpoint_url=self.configuracion.endpoint,
+            region_name=self.configuracion.region,
+            aws_access_key_id=self.configuracion.access_key,
+            aws_secret_access_key=self.configuracion.secret_key,
+            verify=True,
+            config=self._cliente.meta.config.merge(Config(retries={"total_max_attempts": 1})),
+        )
+        try:
+            # Se conserva la pista IfMatch, pero no se confía en ella como prueba.
+            respuesta = cliente.copy_object(
+                Bucket=self.configuracion.bucket, Key=destino,
+                CopySource={"Bucket": self.configuracion.bucket, "Key": origen},
+                CopySourceIfMatch=etag_origen, MetadataDirective="REPLACE",
+                ContentType="application/octet-stream", ContentDisposition="attachment")
+            if not respuesta.get("CopyObjectResult", {}).get("ETag"):
+                raise ErrorS3()
+        except (BotoCoreError, ClientError):
+            raise ErrorS3() from None
+        finally:
+            cliente.close()

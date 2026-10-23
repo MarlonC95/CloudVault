@@ -42,6 +42,10 @@ def registrar_usuario(datos, remote_addr=None):
                 ip_origen=ip,
                 detalles={},
             )
+            # Import diferido: auth no debe cargar subscriptions al importarse (pruebas aisladas de Dani).
+            from subscriptions.espacio import asegurar_espacio_personal
+
+            asegurar_espacio_personal(usuario.id)
     except IntegrityError as exc:
         cause = getattr(exc, "__cause__", None)
         constraint = getattr(getattr(cause, "diag", None), "constraint_name", None)
