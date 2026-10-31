@@ -126,8 +126,16 @@ def _operacion(valor):
     return valor
 
 
+def _nivel_miembro(valor):
+    if type(valor) is not int or valor not in (1, 2, 3):
+        raise ValueError()
+    return valor
+
+
 _RECURSO = {"recurso_id": _uuid_publico, "tipo_elemento": _tipo_elemento}
 _DETALLES_PUBLICOS = {
+    "MEMBER_ROLE_CHANGED": {"usuario_afectado_id": _uuid_publico, "nivel_anterior": _nivel_miembro, "nivel_nuevo": _nivel_miembro},
+    "MEMBER_REMOVED": {"usuario_afectado_id": _uuid_publico, "nivel_anterior": _nivel_miembro},
     "USER_REGISTERED": {},
     "PASSWORD_RECOVERED": {},
     "PAPELERA_ENVIADO": _RECURSO,

@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from almacenamiento.tests.settings import *  # noqa: F403
 
-INSTALLED_APPS = [*INSTALLED_APPS, "storage", "subscriptions"]  # noqa: F405
+INSTALLED_APPS = list(dict.fromkeys([*INSTALLED_APPS, "storage", "subscriptions"]))  # noqa: F405
 ALMACENAMIENTO_URLCONFS_NEGOCIO = ["storage.urls", "subscriptions.urls"]
 
 

@@ -19,6 +19,10 @@ def error_de_organizaciones(exc, context):
     if isinstance(exc, (OperationalError, LecturaMiembrosNoDisponible, AuditoriaNoDisponible)):
         set_rollback()
         return Response({"error": {"code": "SERVICE_UNAVAILABLE"}}, status=503)
+    from .gestion_miembros import PropietarioProtegido
+    if isinstance(exc, PropietarioProtegido):
+        set_rollback()
+        return Response({"error": {"code": "OWNER_REQUIRED"}}, status=409)
     response = exception_handler(exc, context)
     if response is None:
         set_rollback()

@@ -1,4 +1,4 @@
-"""Inicio de organizaciones; URLconf optativo, no montado en producción."""
+"""Lectura paginada de miembros con pertenencia vigente."""
 
 import re
 
@@ -75,3 +75,31 @@ class MiembrosOrganizacionView(APIView):
             "page_size": pagina.page_size,
             "results": MiembroOrganizacionSerializer(pagina.results, many=True).data,
         })
+
+
+class GestionMiembroView(APIView):
+    authentication_classes = [CloudVaultJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser]
+    http_method_names = ["patch", "delete"]
+
+    def get_exception_handler(self):
+        return error_de_organizaciones
+
+    def _ejecutar(self, request, organizacion_id, usuario_id, retirar):
+        from collections.abc import Mapping
+        from .gestion_miembros import ServicioMiembros
+        if request.query_params:
+            raise ValidationError({"non_field_errors": ["Esta operación no admite parámetros de consulta."]})
+        datos = request.data
+        if not isinstance(datos, Mapping) or (set(datos) if retirar else set(datos) - {"rol"}):
+            raise ValidationError({"non_field_errors": ["Solo se admite rol en PATCH y cuerpo vacío en DELETE."]})
+        ServicioMiembros().ejecutar(request.user.pk, organizacion_id, usuario_id,
+            retirar=retirar, rol=datos.get("rol"))
+        return Response({"mensaje": "Miembro removido de la organización." if retirar else "Rol de usuario actualizado exitosamente."})
+
+    def patch(self, request, organizacion_id, usuario_id):
+        return self._ejecutar(request, organizacion_id, usuario_id, False)
+
+    def delete(self, request, organizacion_id, usuario_id):
+        return self._ejecutar(request, organizacion_id, usuario_id, True)

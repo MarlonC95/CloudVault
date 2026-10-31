@@ -105,7 +105,7 @@ class ProveedorStorage:
                 FROM archivos a JOIN miembros_organizacion m ON m.organizacion_id = a.organizacion_id
                 WHERE a.id = %s AND m.usuario_id = %s AND m.nivel_rol IN (0,2,3)
                     AND NOT a.en_papelera""" + (
-                        " FOR SHARE OF a" if connections[self.using].in_atomic_block else ""),
+                        " FOR SHARE OF a, m" if connections[self.using].in_atomic_block else ""),
                 [archivo_id, solicitante_id])
             fila = cursor.fetchone()
         if fila is None:

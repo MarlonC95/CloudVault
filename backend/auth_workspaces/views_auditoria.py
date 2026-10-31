@@ -1,4 +1,4 @@
-"""Auditoría organizacional preparatoria; no montada en routers productivos."""
+"""Auditoría organizacional restringida al propietario vigente."""
 
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError

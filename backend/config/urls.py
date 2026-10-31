@@ -10,6 +10,7 @@ from almacenamiento.rutas_integracion import rutas_almacenamiento_y_negocio
 urlpatterns = [
     path("api/v1/auth/", include("auth_workspaces.urls")),
     path("api/v1/", include("auth_workspaces.urls_espacios")),
+    path("api/v1/", include("auth_workspaces.urls_organizaciones")),
     *rutas_almacenamiento_y_negocio(),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
