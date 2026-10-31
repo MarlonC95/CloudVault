@@ -7,6 +7,8 @@ import DashboardPage from '../pages/DashboardPage'
 import PapeleraPage from '../pages/PapeleraPage'
 import ProfilePage from '../pages/ProfilePage'
 import PlanesPage from '../pages/PlanesPage'
+import AdministracionPage from '../pages/AdministracionPage'
+import PlataformaPage from '../pages/PlataformaPage'
 import { obtenerSesion } from '../services/authService'
 
 function RutaProtegida() {
@@ -39,6 +41,8 @@ function AppRouter() {
           <Route path="/papelera" element={<PapeleraPage />} />
           <Route path="/perfil" element={<ProfilePage />} />
           <Route path="/planes" element={<PlanesPage />} />
+          <Route path="/administracion" element={<AdministracionPage />} />
+          <Route path="/administracion/plataforma" element={<PlataformaPage />} />
         </Route>
         <Route path="/" element={<Navigate to="/login" replace />} />
       </Routes>
