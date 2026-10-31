@@ -170,6 +170,7 @@ class ClienteTests(SimpleTestCase):
         with patch.object(self.cliente, "_operar", side_effect=[
             {},
             {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+            {"ContentLength": 9},
             {},
             {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
             ErrorS3("ausente"),
@@ -177,9 +178,10 @@ class ClienteTests(SimpleTestCase):
             self.cliente.borrar_fisico_verificado(clave)
         self.assertEqual(operar.call_args_list[0].args, ("get_bucket_versioning",))
         self.assertEqual(operar.call_args_list[1].kwargs, {"Prefix": clave, "MaxKeys": 1000})
-        self.assertEqual(operar.call_args_list[2].kwargs, {"Key": clave})
-        self.assertEqual(operar.call_args_list[3].kwargs, {"Prefix": clave, "MaxKeys": 1000})
-        self.assertEqual(operar.call_args_list[4].kwargs, {"Key": clave})
+        self.assertEqual(operar.call_args_list[2].args[0], "head_object")
+        self.assertEqual(operar.call_args_list[3].kwargs, {"Key": clave})
+        self.assertEqual(operar.call_args_list[4].kwargs, {"Prefix": clave, "MaxKeys": 1000})
+        self.assertEqual(operar.call_args_list[5].kwargs, {"Key": clave})
 
     def test_borrado_fisico_acepta_solo_version_null_actual_no_versionada(self):
         clave = nueva_clave_final(uuid4())
@@ -187,13 +189,14 @@ class ClienteTests(SimpleTestCase):
             {},
             {"Versions": [{"Key": clave, "VersionId": "null", "IsLatest": True}],
              "DeleteMarkers": [], "IsTruncated": False},
+            {"ContentLength": 9},
             {},
             {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
             ErrorS3("ausente"),
         ]) as operar:
             self.cliente.borrar_fisico_verificado(clave)
-        self.assertEqual(operar.call_args_list[2].args[0], "delete_object")
-        self.assertNotIn("VersionId", operar.call_args_list[2].kwargs)
+        self.assertEqual(operar.call_args_list[3].args[0], "delete_object")
+        self.assertNotIn("VersionId", operar.call_args_list[3].kwargs)
 
     def test_borrado_fisico_versionado_o_historial_no_elimina_por_clave(self):
         clave = nueva_clave_final(uuid4())
@@ -209,6 +212,13 @@ class ClienteTests(SimpleTestCase):
                         self.cliente.borrar_fisico_verificado(clave)
                 self.assertFalse(any(call.args[0] == "delete_object" for call in operar.call_args_list))
 
+    def test_borrado_fisico_reporta_bucket_versionado_como_incompatible(self):
+        clave = nueva_clave_final(uuid4())
+        with patch.object(self.cliente, "_operar", return_value={"Status": "Enabled"}):
+            with self.assertRaises(ErrorS3) as error:
+                self.cliente.borrar_fisico_verificado(clave)
+        self.assertEqual(error.exception.tipo, "incompatible")
+
     def test_borrado_fisico_sin_permiso_para_consultar_versionado_no_hace_delete(self):
         clave = nueva_clave_final(uuid4())
         with patch.object(self.cliente, "_operar", side_effect=ErrorS3("acceso")) as operar:
@@ -220,15 +230,18 @@ class ClienteTests(SimpleTestCase):
         clave = nueva_clave_final(uuid4())
         escenarios = (
             ([{}, {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
-              ErrorS3("acceso")], "fallo_delete"),
+              {"ContentLength": 5}, ErrorS3("acceso")], "fallo_delete"),
             ([{}, {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
-              {}, {"Versions": [{"Key": clave, "VersionId": "null", "IsLatest": True}],
+              {"ContentLength": 5}, {},
+              {"Versions": [{"Key": clave, "VersionId": "null", "IsLatest": True}],
                    "DeleteMarkers": [], "IsTruncated": False}], "sigue_presente"),
             ([{}, {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
-              {}, {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+              {"ContentLength": 5}, {},
+              {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
               ErrorS3("acceso")], "head_denegado"),
             ([{}, {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
-              {}, {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+              {"ContentLength": 5}, {},
+              {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
               ErrorS3("servicio")], "head_timeout"),
         )
         for respuestas, nombre in escenarios:
@@ -247,7 +260,7 @@ class ClienteTests(SimpleTestCase):
             ErrorS3("ausente"),
         ]) as operar:
             self.cliente.borrar_fisico_verificado(clave)
-        self.assertEqual(operar.call_args_list[2].args[0], "delete_object")
+        self.assertEqual(operar.call_args_list[2].args[0], "head_object")
         self.assertEqual(operar.call_args_list[2].kwargs, {"Key": clave})
 
     def test_borrado_fisico_pagina_historial_acotada_y_ausencia_final(self):
@@ -272,7 +285,7 @@ class ClienteTests(SimpleTestCase):
         escenarios = (
             ([{}, ErrorS3("acceso")], "listado_inicial"),
             ([{}, {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
-              {}, ErrorS3("servicio")], "listado_final"),
+              {"ContentLength": 5}, {}, ErrorS3("servicio")], "listado_final"),
         )
         for respuestas, nombre in escenarios:
             with self.subTest(escenario=nombre), patch.object(
@@ -289,6 +302,7 @@ class ClienteTests(SimpleTestCase):
         with patch.object(self.cliente, "_operar", side_effect=[
             {},
             {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+            {"ContentLength": 5},
             {},
             {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
             {"ContentLength": 5},

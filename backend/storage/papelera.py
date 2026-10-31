@@ -10,11 +10,18 @@ from rest_framework.exceptions import APIException, NotFound, PermissionDenied, 
 
 class ErrorPapelera(APIException):
     def __init__(self, codigo="SERVICE_UNAVAILABLE", status=503, *, fields=None):
+        self.codigo = codigo
         self.status_code = status
         detalle = {"error": {"code": codigo}}
         if fields:
             detalle["error"]["fields"] = fields
         super().__init__(detalle)
+
+
+def _error_reclamo_ocupado():
+    error = ErrorPapelera("SERVICE_UNAVAILABLE", 503)
+    error.es_reclamo_ocupado = True
+    return error
 
 
 def identificador(valor):
@@ -33,10 +40,13 @@ class ServicioPapelera:
 
     @contextmanager
     def reclamar(self, archivo_id):
+        from almacenamiento.persistencia import ReclamoOcupado
         from almacenamiento.errores import ErrorCarga
         try:
             with self.repo.reclamar(identificador(archivo_id)) as comprobar:
                 yield comprobar
+        except ReclamoOcupado:
+            raise _error_reclamo_ocupado() from None
         except (ErrorCarga, DatabaseError):
             raise ErrorPapelera() from None
 
@@ -123,27 +133,63 @@ class ServicioPapelera:
             self.repo.evento_restauracion(archivo, actor, generacion)
 
     def purgar(self, *, solicitante_id, organizacion_id, archivo_id,
-               cliente=None, crear_cliente=None):
+               cliente=None, crear_cliente=None, operacion_lote_id=None):
         """Purgar una generación con intención durable y recuperación por repetición."""
         actor, org, archivo_id = map(identificador, (solicitante_id, organizacion_id, archivo_id))
+        return self._purgar(actor=actor, org=org, archivo_id=archivo_id,
+                            cliente=cliente, crear_cliente=crear_cliente,
+                            operacion_lote_id=operacion_lote_id)
+
+    def purgar_automaticamente(self, *, candidato, cliente=None, crear_cliente=None):
+        """Procesa una selección interna y vuelve a validar su instantánea bajo reclamo."""
+        org, archivo_id = map(identificador, (candidato.organizacion_id, candidato.archivo_id))
+        return self._purgar(actor=None, org=org, archivo_id=archivo_id,
+                            cliente=cliente, crear_cliente=crear_cliente,
+                            candidato=candidato)
+
+    def _purgar(self, *, actor, org, archivo_id, cliente, crear_cliente, candidato=None,
+                operacion_lote_id=None):
         with self.reclamar(archivo_id) as comprobar:
             intencion = None
             intencion_confirmada = False
             try:
                 with self.repo.transaccion(org):
                     comprobar()
-                    nivel = self.repo.nivel(actor, org)
-                    if nivel != 0:
-                        raise PermissionDenied()
+                    if candidato is None:
+                        nivel = self.repo.nivel(actor, org)
+                        if nivel != 0:
+                            raise PermissionDenied()
                     archivo = self.repo.archivo(archivo_id, org)
-                    if archivo is None:
-                        raise NotFound()
-                    if not archivo.en_papelera:
-                        raise ErrorPapelera("VALIDATION_ERROR", 409)
-                    intencion = self.repo.generar_o_reutilizar_intencion(archivo, actor)
+                    if candidato is not None:
+                        if archivo is None or not archivo.en_papelera:
+                            raise ErrorPapelera("CANDIDATE_STALE", 409)
+                        if candidato.operacion_id:
+                            if not self.repo.validar_identidad_candidato(archivo, candidato):
+                                raise ErrorPapelera("CANDIDATE_STALE", 409)
+                            if not self.repo.reintento_candidato_vencido(archivo, candidato, self.reloj()):
+                                raise ErrorPapelera("RETRY_DEFERRED", 409)
+                        elif not self.repo.validar_candidato(archivo, candidato, self.reloj()):
+                            raise ErrorPapelera("CANDIDATE_STALE", 409)
+                    else:
+                        if archivo is None:
+                            raise NotFound()
+                        if not archivo.en_papelera:
+                            raise ErrorPapelera("VALIDATION_ERROR", 409)
+                        if self.repo.lote_purga_pendiente(
+                                org, archivo_id, excluir_operacion=operacion_lote_id):
+                            raise ErrorPapelera("RESOURCE_BUSY", 409)
+                    intencion = self.repo.generar_o_reutilizar_intencion(
+                        archivo, actor, origen="VENCIMIENTO" if candidato is not None and not candidato.operacion_id else "MANUAL")
+                    if candidato is not None and candidato.operacion_id:
+                        if intencion.get("operacion_id") != candidato.operacion_id:
+                            raise ErrorPapelera("CANDIDATE_STALE", 409)
                     if self.repo.referencia_incompatible(archivo, intencion["clave_s3"]):
+                        if candidato is not None:
+                            raise ErrorPapelera("PURGE_INCOMPATIBLE", 409)
                         raise ErrorPapelera()
                     if archivo.clave_s3 != intencion["clave_s3"]:
+                        if candidato is not None:
+                            raise ErrorPapelera("PURGE_INCOMPATIBLE", 409)
                         raise ErrorPapelera()
                 intencion_confirmada = True
             except (NotFound, PermissionDenied, ValidationError, ErrorPapelera):
@@ -155,22 +201,32 @@ class ServicioPapelera:
                 raise ErrorPapelera() from None
 
             creado_aqui = cliente is None
+            bytes_eliminados = 0
             try:
                 if cliente is None:
                     if not callable(crear_cliente):
                         raise ErrorPapelera()
                     cliente = crear_cliente()
                 comprobar()
-                cliente.borrar_fisico_verificado(intencion["clave_s3"])
+                bytes_eliminados = cliente.borrar_fisico_verificado(intencion["clave_s3"]) or 0
                 comprobar()
-            except Exception:
-                self._registrar_reintento(org, actor, archivo_id, intencion, "AUSENCIA_NO_CONFIRMADA")
+            except Exception as exc:
+                from almacenamiento.s3 import ErrorS3
+                motivo = "S3" if isinstance(exc, ErrorS3) else "AUSENCIA_NO_CONFIRMADA"
+                codigo = "SERVICE_UNAVAILABLE"
+                estado = 503
+                if isinstance(exc, ErrorS3) and exc.tipo == "incompatible":
+                    motivo = "INCOMPATIBLE"
+                    if candidato is not None:
+                        codigo, estado = "PURGE_INCOMPATIBLE", 409
+                self._registrar_reintento(org, actor, archivo_id, intencion, motivo,
+                                          bytes_fisicos_confirmados=bytes_eliminados)
                 if creado_aqui and cliente is not None:
                     try:
                         cliente.cerrar()
                     except Exception:
                         pass
-                raise ErrorPapelera() from None
+                raise ErrorPapelera(codigo, estado) from None
 
             try:
                 with self.repo.transaccion(org):
@@ -178,10 +234,12 @@ class ServicioPapelera:
                     archivo = self.repo.archivo(archivo_id, org)
                     if archivo is None:
                         raise ErrorPapelera()
-                    self.repo.cerrar_purga(archivo, actor, intencion)
+                    self.repo.cerrar_purga(archivo, actor, intencion,
+                                           bytes_fisicos_purgados=bytes_eliminados)
                     comprobar()
             except Exception:
-                self._registrar_reintento(org, actor, archivo_id, intencion, "CIERRE")
+                self._registrar_reintento(org, actor, archivo_id, intencion, "CIERRE",
+                                          bytes_fisicos_confirmados=bytes_eliminados)
                 raise ErrorPapelera() from None
             finally:
                 if creado_aqui and cliente is not None:
@@ -189,15 +247,19 @@ class ServicioPapelera:
                         cliente.cerrar()
                     except Exception:
                         pass
+            return bytes_eliminados
 
-    def _registrar_reintento(self, org, actor, archivo_id, intencion, motivo):
+    def _registrar_reintento(self, org, actor, archivo_id, intencion, motivo,
+                             *, bytes_fisicos_confirmados=0):
         if not intencion:
             return
         try:
             with self.repo.transaccion(org):
                 archivo = self.repo.archivo(archivo_id, org)
                 if archivo is not None:
-                    self.repo.auditar_reintento_purga(archivo, actor, intencion, motivo)
+                    self.repo.auditar_reintento_purga(archivo, actor, intencion, motivo,
+                                                       ahora=self.reloj(),
+                                                       bytes_fisicos_confirmados=bytes_fisicos_confirmados)
         except Exception:
             # La intención confirmada permanece como evidencia recuperable.
             pass

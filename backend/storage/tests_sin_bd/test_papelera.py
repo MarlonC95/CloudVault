@@ -32,6 +32,7 @@ class RepositorioFalso:
         self.eventos, self.pasos = [], []
         self.pendiente = self.falla_auditoria = self.falla_commit = self.falla_lock = False
         self.intencion = None
+        self.consultas_lote = []
         self.deleted = False
         self.en_transaccion = False
         self.falla_cierre = False
@@ -87,6 +88,10 @@ class RepositorioFalso:
     def purga_pendiente(self, archivo):
         return self.pendiente
 
+    def lote_purga_pendiente(self, organizacion_id, recurso_id, *, excluir_operacion=None):
+        self.consultas_lote.append((organizacion_id, recurso_id, excluir_operacion))
+        return False
+
     def generar_o_reutilizar_intencion(self, archivo, actor, origen="MANUAL"):
         self.pasos.append("intencion")
         if self.intencion is None:
@@ -101,7 +106,7 @@ class RepositorioFalso:
     def referencia_incompatible(self, archivo, clave):
         return False
 
-    def cerrar_purga(self, archivo, actor, intencion):
+    def cerrar_purga(self, archivo, actor, intencion, *, bytes_fisicos_purgados=0):
         self.pasos.append("cierre")
         if self.falla_cierre:
             raise OperationalError("synthetic-close")
@@ -109,7 +114,8 @@ class RepositorioFalso:
                              "generacion_id":intencion["generacion_id"]})
         self.deleted = True
 
-    def auditar_reintento_purga(self, archivo, actor, intencion, motivo):
+    def auditar_reintento_purga(self, archivo, actor, intencion, motivo, *, ahora=None,
+                                bytes_fisicos_confirmados=0):
         self.pasos.append("reintento")
         self.eventos.append({**intencion, "intento":1, "motivo":motivo})
 
@@ -430,6 +436,14 @@ class PurgaFaseTresTests(BasePapeleraTests):
         self.assertLess(self.repo.pasos.index('s3'), self.repo.pasos.index('cierre'))
         self.assertTrue(self.repo.deleted)
 
+    def test_purga_de_lote_reenvia_su_id_para_conservar_el_bloqueo_a_terceros(self):
+        operacion = str(uuid4())
+        self.servicio.purgar(**self.datos, cliente=self.cliente,
+                             operacion_lote_id=operacion)
+        self.assertEqual(self.repo.consultas_lote,
+                         [(self.repo.org, self.repo.id, operacion)])
+        self.assertTrue(self.repo.deleted)
+
     def test_fallo_al_confirmar_intencion_no_toca_s3(self):
         self.repo.falla_commit = True
         with self.assertRaises(ErrorPapelera):
@@ -557,6 +571,22 @@ class ReglasAdaptadorTests(SimpleTestCase):
             with self.assertRaises(ErrorPapelera):
                 self.repo.purga_pendiente(self.archivo)
 
+    def test_seleccion_de_lote_bloquea_purgas_ajenas_y_permite_su_propio_servicio(self):
+        operacion = str(uuid4())
+        evento = SimpleNamespace(accion="PAPELERA_VACIADO_INICIADO",
+                                 detalles={"operacion_id": operacion})
+        with patch("storage.repositorio_papelera.LogAuditoria.objects") as auditoria:
+            eventos = MagicMock()
+            eventos.order_by.return_value.__getitem__.return_value = [evento]
+            cierre = MagicMock()
+            cierre.exists.return_value = False
+            auditoria.using.return_value.filter.side_effect = [eventos, cierre, eventos, cierre]
+
+            self.assertTrue(self.repo.lote_purga_pendiente(
+                self.org, self.archivo.pk, excluir_operacion="otra-operacion"))
+            self.assertFalse(self.repo.lote_purga_pendiente(
+                self.org, self.archivo.pk, excluir_operacion=operacion))
+
     def test_ultimo_evento_de_version_desconocida_falla_cerrado(self):
         evento = SimpleNamespace(detalles={"version":2, "generacion_id":str(uuid4()),
                                            "recurso_id":str(self.archivo.pk)})
@@ -614,23 +644,30 @@ class ReglasAdaptadorTests(SimpleTestCase):
         evento = SimpleNamespace(accion="PAPELERA_ENVIADO",
                                  detalles={"version":1, "generacion_id":generacion,
                                            "recurso_id":str(self.archivo.pk)})
+        eventos = MagicMock()
+        eventos.filter.return_value.order_by.return_value.first.return_value = None
         with patch.object(self.repo, "intencion_pendiente", return_value=solicitud), \
              patch.object(self.repo, "ultimo_evento", return_value=evento), \
              patch.object(self.repo, "referencia_incompatible", return_value=False), \
+             patch.object(self.repo, "_eventos_archivo", return_value=eventos), \
              patch("storage.repositorio_papelera.LogAuditoria.objects") as auditoria:
             self.repo.cerrar_purga(self.archivo, actor, intencion)
             self.archivo.delete.assert_called_once_with(using="default")
             auditoria.using.return_value.create.assert_called_once()
+            detalles_cierre = auditoria.using.return_value.create.call_args.kwargs["detalles"]
+            self.assertEqual(detalles_cierre["fecha_papelera"], AHORA.isoformat())
         with patch.object(self.repo, "intencion_pendiente", return_value=solicitud), \
              patch.object(self.repo, "ultimo_evento", return_value=SimpleNamespace(
                  accion="PAPELERA_ENVIADO", detalles={"version":1, "generacion_id":str(uuid4()),
                                                        "recurso_id":str(self.archivo.pk)})), \
-             patch.object(self.repo, "referencia_incompatible", return_value=False):
+             patch.object(self.repo, "referencia_incompatible", return_value=False), \
+             patch.object(self.repo, "_eventos_archivo", return_value=eventos):
             with self.assertRaises(ErrorPapelera):
                 self.repo.cerrar_purga(self.archivo, actor, intencion)
         with patch.object(self.repo, "intencion_pendiente", return_value=solicitud), \
              patch.object(self.repo, "ultimo_evento", return_value=evento), \
-             patch.object(self.repo, "referencia_incompatible", return_value=True):
+             patch.object(self.repo, "referencia_incompatible", return_value=True), \
+             patch.object(self.repo, "_eventos_archivo", return_value=eventos):
             with self.assertRaises(ErrorPapelera):
                 self.repo.cerrar_purga(self.archivo, actor, intencion)
 
@@ -652,6 +689,13 @@ class ReglasAdaptadorTests(SimpleTestCase):
         page.order_by.return_value.__getitem__.assert_called_once_with(slice(None, 100, None))
 
 class CalendarioPapeleraTests(SimpleTestCase):
+    def test_fecha_nula_conserva_cero_dias_y_no_inventa_vencimiento(self):
+        from storage.serializers import PapeleraSerializer
+
+        serializer = PapeleraSerializer()
+        self.assertIsNone(serializer.get_expira_en(SimpleNamespace(fecha_papelera=None)))
+        self.assertEqual(serializer.get_dias_restantes(SimpleNamespace(fecha_papelera=None)), 0)
+
     def test_fechas_limite_y_nulas_con_mismo_reloj(self):
         from datetime import timedelta
         from storage.serializers import PapeleraSerializer
@@ -772,6 +816,47 @@ class DestinosYContratosTests(SimpleTestCase):
             repo.return_value.permisos.side_effect=[['read'],[]]
             vista.get_queryset()
             qs.filter.assert_called_once_with(pk__in=[permitido.pk])
+
+    def test_vista_raices_no_oculta_archivo_si_la_raiz_no_es_visible(self):
+        from auth_workspaces.models import LogAuditoria
+        from storage.models import Carpeta
+
+        for visible_raiz in (False, True):
+            with self.subTest(visible_raiz=visible_raiz):
+                actor, org, raiz_id = uuid4(), uuid4(), uuid4()
+                archivo = SimpleNamespace(pk=uuid4())
+                vista = PapeleraViewSet()
+                vista.request = SimpleNamespace(
+                    user=SimpleNamespace(pk=actor), query_params={"vista": "raices"})
+                lote = SimpleNamespace(detalles={"raiz_id": str(raiz_id)})
+                with patch.object(vista, "_ambito", return_value=SimpleNamespace(
+                        nivel_rol=3, organizacion_id=org)), \
+                     patch("storage.views.Archivo.objects") as archivos, \
+                     patch("storage.views.RepositorioPapelera") as repo, \
+                     patch.object(LogAuditoria, "objects") as auditoria, \
+                     patch.object(Carpeta, "objects") as carpetas:
+                    qs = archivos.filter.return_value
+                    qs.iterator.side_effect = lambda: iter([archivo])
+                    qs.filter.return_value.iterator.side_effect = lambda: iter([archivo])
+                    repo.return_value.permisos.side_effect = [
+                        ["read"], ["read"] if visible_raiz else []]
+                    repo.return_value.ultimo_evento.return_value = SimpleNamespace(
+                        detalles={"origen": "CARPETA", "operacion_id": "op-1"})
+                    auditoria.filter.return_value.first.return_value = lote
+                    auditoria.filter.return_value.exists.return_value = False
+                    carpetas.filter.return_value.exists.return_value = True
+                    carpetas.filter.return_value.first.return_value = SimpleNamespace(pk=raiz_id)
+
+                    vista.get_queryset()
+
+                    qs.filter.assert_called_once_with(pk__in=[archivo.pk])
+                    if visible_raiz:
+                        qs.filter.return_value.exclude.assert_called_once_with(
+                            pk__in=[archivo.pk])
+                    else:
+                        qs.filter.return_value.exclude.assert_called_once_with(pk__in=[])
+                    repo.return_value.ultimo_evento.assert_called_once_with(archivo)
+                    self.assertEqual(repo.return_value.permisos.call_count, 2)
 
 
 class ConflictoRestauracionTests(BasePapeleraTests):

@@ -36,6 +36,12 @@ class IntegridadCarga(ValueError):
     """Los datos durables no permiten continuar con seguridad."""
 
 
+class ReclamoOcupado(ErrorCarga):
+    """Otro proceso conserva el reclamo exclusivo del recurso."""
+    def __init__(self):
+        super().__init__(CodigoError.SERVICE_UNAVAILABLE)
+
+
 def clave_bloqueo_cuota(organizacion_id: UUID) -> int:
     if not isinstance(organizacion_id, UUID):
         raise TypeError("La organización debe ser un UUID")
@@ -68,7 +74,7 @@ class RepositorioCargas:
         with connection.cursor() as cursor:
             cursor.execute("SELECT pg_try_advisory_lock(%s)", [llave])
             if not cursor.fetchone()[0]:
-                raise ErrorCarga(CodigoError.SERVICE_UNAVAILABLE)
+                raise ReclamoOcupado()
         try:
             def comprobar():
                 if connection.connection is not original or original.closed:
