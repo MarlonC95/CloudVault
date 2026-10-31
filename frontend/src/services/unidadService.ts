@@ -48,8 +48,8 @@ interface ListaApi<T> {
 }
 
 /** GET /unidad/resumen/ (contrato 3.11): barra de almacenamiento del menú lateral. */
-export async function obtenerResumenAlmacenamiento(): Promise<ResumenAlmacenamiento> {
-  const respuesta = await clienteApi.get<RespuestaApi<ResumenApi>>('/unidad/resumen/')
+export async function obtenerResumenAlmacenamiento(organizacionId: string): Promise<ResumenAlmacenamiento> {
+  const respuesta = await clienteApi.get<RespuestaApi<ResumenApi>>('/unidad/resumen/', { params: { organizacion_id: organizacionId } })
   const resumen = respuesta.data.data
   return {
     usadoBytes: resumen.usado_bytes,
@@ -69,8 +69,8 @@ export async function obtenerResumenAlmacenamiento(): Promise<ResumenAlmacenamie
 }
 
 /** GET /unidad/actividad/ (contrato 7.1): registro de eventos del usuario. */
-export async function listarActividad(): Promise<EventoActividad[]> {
-  const respuesta = await clienteApi.get<RespuestaApi<ListaApi<ActividadApi>>>('/unidad/actividad/')
+export async function listarActividad(organizacionId: string): Promise<EventoActividad[]> {
+  const respuesta = await clienteApi.get<RespuestaApi<ListaApi<ActividadApi>>>('/unidad/actividad/', { params: { organizacion_id: organizacionId } })
   return respuesta.data.data.results.map((evento) => ({
     id: evento.id,
     accion: evento.accion,
@@ -81,8 +81,8 @@ export async function listarActividad(): Promise<EventoActividad[]> {
 }
 
 /** GET /recientes/ (contrato 7.2): archivos tocados recientemente. */
-export async function listarRecientes(): Promise<ArchivoReciente[]> {
-  const respuesta = await clienteApi.get<RespuestaApi<ListaApi<RecienteApi>>>('/recientes/')
+export async function listarRecientes(organizacionId: string): Promise<ArchivoReciente[]> {
+  const respuesta = await clienteApi.get<RespuestaApi<ListaApi<RecienteApi>>>('/recientes/', { params: { organizacion_id: organizacionId } })
   return respuesta.data.data.results.map((archivo) => ({
     id: archivo.id,
     nombre: archivo.nombre,

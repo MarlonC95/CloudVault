@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, Shield } from 'lucide-react'
 import { cerrarSesionEnServidor, obtenerSesion } from '../../services/authService'
+import { useOrganizacion } from '../../context/organizacionesContexto'
 import { useArchivos } from '../../context/archivosContexto'
 import { obtenerResumenAlmacenamiento } from '../../services/unidadService'
 import { ErrorApi } from '../../services/errorApi'
@@ -25,7 +26,7 @@ interface ElementoMenu {
 }
 
 const ELEMENTOS_EXPLORADOR: ElementoMenu[] = [
-  { id: 'mi-unidad', etiqueta: 'Mi Unidad', icono: <HardDrive size={18} />, ruta: '/dashboard' },
+  { id: 'mi-unidad', etiqueta: 'Archivos de la organización', icono: <HardDrive size={18} />, ruta: '/dashboard' },
   { id: 'compartidos', etiqueta: 'Compartidos conmigo', icono: <Users size={18} />, ruta: '/dashboard' },
   { id: 'recientes', etiqueta: 'Recientes', icono: <Clock size={18} />, ruta: '/dashboard' },
 ]
@@ -43,6 +44,7 @@ interface DashboardLayoutProps {
 }
 
 function DashboardLayout({ seccionActiva, onClickSubirArchivo, children }: DashboardLayoutProps) {
+  const { organizacion } = useOrganizacion()
   const navegar = useNavigate()
   const usuario = obtenerSesion()?.usuario
   const { archivos, papelera } = useArchivos()
@@ -53,7 +55,7 @@ function DashboardLayout({ seccionActiva, onClickSubirArchivo, children }: Dashb
 
   useEffect(() => {
     let cancelado = false
-    obtenerResumenAlmacenamiento()
+    obtenerResumenAlmacenamiento(organizacion.id)
       .then((datos) => {
         if (!cancelado) setResumen(datos)
       })
@@ -67,7 +69,7 @@ function DashboardLayout({ seccionActiva, onClickSubirArchivo, children }: Dashb
       cancelado = true
     }
   // Se vuelve a pedir el resumen al cambiar archivos o papelera (subidas, borrados, restauraciones).
-  }, [archivos, papelera])
+  }, [archivos, papelera, organizacion.id])
 
   function manejarSalida() {
     void cerrarSesionEnServidor()
@@ -102,10 +104,10 @@ function DashboardLayout({ seccionActiva, onClickSubirArchivo, children }: Dashb
   }
 
   return (
-    <div className="d-flex" style={{ height: '100vh', overflow: 'hidden' }}>
+    <div className="d-flex" style={{ height: '100%', overflow: 'hidden' }}>
       <aside
         className="d-none d-lg-flex flex-column p-3 text-white flex-shrink-0"
-        style={{ width: '260px', height: '100vh', backgroundColor: COLOR_NAVY, overflowY: 'auto' }}
+        style={{ width: '260px', height: '100%', backgroundColor: COLOR_NAVY, overflowY: 'auto' }}
       >
         <div className="d-flex align-items-center gap-2 mb-4 px-2">
           <Cloud size={26} color={COLOR_MARCA} />
@@ -189,7 +191,7 @@ function DashboardLayout({ seccionActiva, onClickSubirArchivo, children }: Dashb
         </div>
       </aside>
 
-      <div className="d-flex flex-column flex-grow-1" style={{ height: '100vh', overflow: 'hidden', minWidth: 0 }}>
+      <div className="d-flex flex-column flex-grow-1" style={{ height: '100%', overflow: 'hidden', minWidth: 0 }}>
         <BarraSuperior nombreUsuario={usuario?.nombreCompleto ?? 'Usuario'} onCerrarSesion={manejarSalida} />
 
         <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflowY: 'auto', backgroundColor: COLOR_FONDO_PAGINA }}>

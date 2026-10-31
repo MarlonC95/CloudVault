@@ -40,6 +40,15 @@ class ServiciosCompartidosValidados:
             raise IntegridadCarga("El servicio devolvió otro destino")
         return destino
 
+    def resolver_destino_organizacion(self, *, solicitante_id, carpeta_id, organizacion_id):
+        from .integracion import resolver_destino_en_organizacion
+        if (not isinstance(solicitante_id, UUID) or not isinstance(organizacion_id, UUID)
+                or (carpeta_id is not None and not isinstance(carpeta_id, UUID))):
+            raise IntegridadCarga("Identidades de destino inválidas")
+        return resolver_destino_en_organizacion(
+            self.servicios, solicitante_id=solicitante_id, carpeta_id=carpeta_id,
+            organizacion_id=organizacion_id)
+
     @contextmanager
     def bloquear_cuota(self, *, organizacion_id):
         if not isinstance(organizacion_id, UUID) or self._cuota_bloqueada.get() is not None:

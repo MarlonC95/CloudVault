@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useOrganizacion } from './organizacionesContexto'
 import type { ReactNode } from 'react'
 import type { Archivo, Carpeta } from '../types/archivo'
 import type { ArchivoEnPapelera, CarpetaEnPapelera } from '../types/papelera'
@@ -30,16 +31,18 @@ async function obtenerTodasLasPaginas<T>(listar: (pagina: number) => Promise<{ r
   }
 }
 
-async function obtenerCarpetasPapelera(): Promise<{ carpetas: CarpetaEnPapelera[]; puedeVaciar: boolean }> {
+async function obtenerCarpetasPapelera(organizacionId: string): Promise<{ carpetas: CarpetaEnPapelera[]; puedeVaciar: boolean }> {
   const carpetas: CarpetaEnPapelera[] = []
   for (let pagina = 1; ; pagina += 1) {
-    const respuesta = await listarCarpetasPapelera(pagina)
+    const respuesta = await listarCarpetasPapelera(pagina, organizacionId)
     carpetas.push(...respuesta.resultados)
     if (!respuesta.urlSiguiente) return { carpetas, puedeVaciar: respuesta.puedeVaciar }
   }
 }
 
 function ArchivosProvider({ children }: ArchivosProviderProps) {
+  const { organizacion, comprobarSeleccion, ejecutar } = useOrganizacion()
+  const organizacionId = organizacion.id
   const [carpetas, setCarpetas] = useState<Carpeta[]>([])
   const [archivos, setArchivos] = useState<Archivo[]>([])
   const [papelera, setPapelera] = useState<ArchivoEnPapelera[]>([])
@@ -54,13 +57,14 @@ function ArchivosProvider({ children }: ArchivosProviderProps) {
     setCargando(true)
     setError(null)
     try {
+      if (!await comprobarSeleccion()) return
       const [unidad, papeleraResultado] = await Promise.allSettled([
-        Promise.all([obtenerTodasLasPaginas(listarCarpetas),
-          obtenerTodasLasPaginas((pagina) => listarArchivos({ pagina }))]),
+        Promise.all([obtenerTodasLasPaginas((pagina) => listarCarpetas(pagina, organizacionId)),
+          obtenerTodasLasPaginas((pagina) => listarArchivos({ pagina, organizacionId }))]),
         Promise.all([
-          obtenerTodasLasPaginas((pagina) => listarPapelera(pagina, true)),
-          obtenerCarpetasPapelera(),
-          obtenerTodasLasPaginas(listarPapelera),
+          obtenerTodasLasPaginas((pagina) => listarPapelera(pagina, true, organizacionId)),
+          obtenerCarpetasPapelera(organizacionId),
+          obtenerTodasLasPaginas((pagina) => listarPapelera(pagina, false, organizacionId)),
         ]),
       ])
       setErrorPapelera(null)
@@ -81,22 +85,30 @@ function ArchivosProvider({ children }: ArchivosProviderProps) {
       setCarpetas(unidad.value[0])
       setArchivos(unidad.value[1])
     } catch (causa) {
+      setCarpetas([])
+      setArchivos([])
       setError(convertirEnErrorApi(causa).message)
       throw causa
     } finally {
       setCargando(false)
     }
-  }, [])
+  }, [organizacionId, comprobarSeleccion])
 
   useEffect(() => { void Promise.resolve().then(refrescar).catch(() => undefined) }, [refrescar])
 
-  async function mutar<T>(accion: () => Promise<T>): Promise<T> {
+  function mutar<T>(accion: () => Promise<T>): Promise<T> {
+    return ejecutar(() => mutarEnAmbito(accion))
+  }
+
+  async function mutarEnAmbito<T>(accion: () => Promise<T>): Promise<T> {
     setError(null)
     let resultado: T
     try {
       resultado = await accion()
     } catch (causa) {
       try { await refrescar() } catch { /* Se conserva el error original de la operación. */ }
+      setCarpetas([])
+      setArchivos([])
       setError(convertirEnErrorApi(causa).message)
       throw causa
     }
@@ -106,18 +118,18 @@ function ArchivosProvider({ children }: ArchivosProviderProps) {
 
   const valor: ArchivosContextoValor = {
     carpetas, archivos, papelera, papeleraCompleta, carpetasEnPapelera, puedeVaciarPapelera, cargando, error, errorPapelera, refrescar,
-    crearCarpeta: (nombre) => mutar(async () => { await crearCarpetaApi(nombre) }),
-    renombrarCarpeta: (id, nombre) => mutar(() => actualizarCarpeta(id, { nombre })),
-    renombrarArchivo: (id, nombre) => mutar(() => renombrarArchivoApi(id, nombre)),
-    moverArchivo: (id, carpetaId) => mutar(() => moverArchivoApi(id, carpetaId)),
-    enviarAPapelera: (id) => mutar(async () => { await enviarArchivoAPapelera(id) }),
-    restaurarArchivos: (ids) => mutar(async () => { for (const id of ids) await restaurarArchivoDePapelera(id) }),
-    eliminarDefinitivamente: (ids) => mutar(async () => { for (const id of ids) await eliminarDefinitivamenteDePapelera(id) }),
-    restaurarCarpetaPapelera: (id) => mutar(async () => { await restaurarCarpetaDePapelera(id) }),
-    eliminarCarpetaPapelera: (id) => mutar(() => eliminarCarpetaDePapelera(id)),
-    vaciarPapelera: () => mutar(vaciarPapeleraApi),
-    reanudarVaciadoPapelera: (id) => mutar(() => reanudarVaciadoPapeleraApi(id)),
-    consultarVaciadoPapelera: consultarVaciadoPapeleraApi,
+    crearCarpeta: (nombre) => mutar(async () => { await crearCarpetaApi(nombre, organizacionId) }),
+    renombrarCarpeta: (id, nombre) => mutar(() => actualizarCarpeta(id, { nombre }, organizacionId)),
+    renombrarArchivo: (id, nombre) => mutar(() => renombrarArchivoApi(id, nombre, organizacionId)),
+    moverArchivo: (id, carpetaId) => mutar(() => moverArchivoApi(id, carpetaId, organizacionId)),
+    enviarAPapelera: (id) => mutar(async () => { await enviarArchivoAPapelera(id, organizacionId) }),
+    restaurarArchivos: (ids) => mutar(async () => { for (const id of ids) await restaurarArchivoDePapelera(id, organizacionId) }),
+    eliminarDefinitivamente: (ids) => mutar(async () => { for (const id of ids) await eliminarDefinitivamenteDePapelera(id, organizacionId) }),
+    restaurarCarpetaPapelera: (id) => mutar(async () => { await restaurarCarpetaDePapelera(id, organizacionId) }),
+    eliminarCarpetaPapelera: (id) => mutar(() => eliminarCarpetaDePapelera(id, organizacionId)),
+    vaciarPapelera: () => mutar(() => vaciarPapeleraApi(organizacionId)),
+    reanudarVaciadoPapelera: (id) => mutar(() => reanudarVaciadoPapeleraApi(id, organizacionId)),
+    consultarVaciadoPapelera: (id) => consultarVaciadoPapeleraApi(id, organizacionId),
   }
 
   return <ArchivosContexto.Provider value={valor}>{children}</ArchivosContexto.Provider>

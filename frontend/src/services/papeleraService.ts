@@ -56,17 +56,17 @@ function mapearCarpetaEnPapelera(carpeta: CarpetaEnPapeleraApi): CarpetaEnPapele
 }
 
 /** GET /papelera/ (contrato 8): elementos en retención con su cuenta regresiva. */
-export async function listarPapelera(pagina = 1, soloRaices = false): Promise<Pagina<ArchivoEnPapelera>> {
+export async function listarPapelera(pagina: number, soloRaices: boolean, organizacionId: string): Promise<Pagina<ArchivoEnPapelera>> {
   const respuesta = await clienteApi.get<RespuestaApi<PaginaApi<ArchivoEnPapeleraApi>>>('/papelera/', {
-    params: { page: pagina, ...(soloRaices ? { vista: 'raices' } : {}) },
+    params: { page: pagina, organizacion_id: organizacionId, ...(soloRaices ? { vista: 'raices' } : {}) },
   })
   return mapearPagina(respuesta.data.data, mapearArchivoEnPapelera)
 }
 
 /** GET /papelera/carpetas/: raíces de lotes, separadas del contrato antiguo de archivos. */
-export async function listarCarpetasPapelera(pagina = 1): Promise<Pagina<CarpetaEnPapelera> & { puedeVaciar: boolean }> {
+export async function listarCarpetasPapelera(pagina: number, organizacionId: string): Promise<Pagina<CarpetaEnPapelera> & { puedeVaciar: boolean }> {
   const respuesta = await clienteApi.get<RespuestaApi<PaginaApi<CarpetaEnPapeleraApi> & { puede_vaciar: boolean }>>(
-    '/papelera/carpetas/', { params: { page: pagina } }
+    '/papelera/carpetas/', { params: { page: pagina, organizacion_id: organizacionId } }
   )
   return {
     ...mapearPagina(respuesta.data.data, mapearCarpetaEnPapelera),
@@ -75,28 +75,28 @@ export async function listarCarpetasPapelera(pagina = 1): Promise<Pagina<Carpeta
 }
 
 /** POST /papelera/carpetas/{id}/restaurar/ */
-export async function restaurarCarpetaDePapelera(carpetaId: string): Promise<string> {
+export async function restaurarCarpetaDePapelera(carpetaId: string, organizacionId: string): Promise<string> {
   const respuesta = await clienteApi.post<RespuestaApi<RespuestaMensajeApi>>(
-    `/papelera/carpetas/${carpetaId}/restaurar/`
+    `/papelera/carpetas/${carpetaId}/restaurar/`, {}, { params: { organizacion_id: organizacionId } }
   )
   return respuesta.data.data.mensaje
 }
 
 /** DELETE /papelera/carpetas/{id}/; purga el árbol retenido como selección fija. */
-export async function eliminarCarpetaDePapelera(carpetaId: string): Promise<void> {
-  await clienteApi.delete(`/papelera/carpetas/${carpetaId}/`)
+export async function eliminarCarpetaDePapelera(carpetaId: string, organizacionId: string): Promise<void> {
+  await clienteApi.delete(`/papelera/carpetas/${carpetaId}/`, { params: { organizacion_id: organizacionId } })
 }
 
-export async function vaciarPapelera(): Promise<string> {
+export async function vaciarPapelera(organizacionId: string): Promise<string> {
   const respuesta = await clienteApi.post<RespuestaApi<{ operacion_id: string; mensaje: string }>>(
-    '/papelera/vaciar/'
+    '/papelera/vaciar/', {}, { params: { organizacion_id: organizacionId } }
   )
   return respuesta.data.data.operacion_id
 }
 
-export async function reanudarVaciadoPapelera(operacionId: string): Promise<string> {
+export async function reanudarVaciadoPapelera(operacionId: string, organizacionId: string): Promise<string> {
   const respuesta = await clienteApi.post<RespuestaApi<{ operacion_id: string; mensaje: string }>>(
-    `/papelera/vaciados/${operacionId}/`
+    `/papelera/vaciados/${operacionId}/`, {}, { params: { organizacion_id: organizacionId } }
   )
   return respuesta.data.data.operacion_id
 }
@@ -110,7 +110,7 @@ export interface EstadoVaciadoPapelera {
   obsoletos: number
 }
 
-export async function consultarVaciadoPapelera(operacionId: string): Promise<EstadoVaciadoPapelera> {
+export async function consultarVaciadoPapelera(operacionId: string, organizacionId: string): Promise<EstadoVaciadoPapelera> {
   const respuesta = await clienteApi.get<RespuestaApi<{
     operacion_id: string
     estado: 'completado' | 'pendiente' | 'incompleto'
@@ -118,7 +118,7 @@ export async function consultarVaciadoPapelera(operacionId: string): Promise<Est
     completados: number
     pendientes: number
     obsoletos: number
-  }>>(`/papelera/vaciados/${operacionId}/`)
+  }>>(`/papelera/vaciados/${operacionId}/`, { params: { organizacion_id: organizacionId } })
   return {
     operacionId: respuesta.data.data.operacion_id,
     estado: respuesta.data.data.estado,
@@ -130,12 +130,12 @@ export async function consultarVaciadoPapelera(operacionId: string): Promise<Est
 }
 
 /** POST /papelera/{id}/restaurar/ (contrato 8) */
-export async function restaurarArchivoDePapelera(archivoId: string): Promise<string> {
-  const respuesta = await clienteApi.post<RespuestaApi<RespuestaMensajeApi>>(`/papelera/${archivoId}/restaurar/`)
+export async function restaurarArchivoDePapelera(archivoId: string, organizacionId: string): Promise<string> {
+  const respuesta = await clienteApi.post<RespuestaApi<RespuestaMensajeApi>>(`/papelera/${archivoId}/restaurar/`, {}, { params: { organizacion_id: organizacionId } })
   return respuesta.data.data.mensaje
 }
 
 /** DELETE /papelera/{id}/ (contrato 8): eliminación definitiva, no se puede deshacer. */
-export async function eliminarDefinitivamenteDePapelera(archivoId: string): Promise<void> {
-  await clienteApi.delete(`/papelera/${archivoId}/`)
+export async function eliminarDefinitivamenteDePapelera(archivoId: string, organizacionId: string): Promise<void> {
+  await clienteApi.delete(`/papelera/${archivoId}/`, { params: { organizacion_id: organizacionId } })
 }

@@ -14,7 +14,8 @@ from almacenamiento.persistencia import RepositorioCargas
 from common.ambito import NIVELES_ESCRITURA
 from subscriptions.cuotas import CONSULTA_CUOTA, SinSuscripcionVigente, leer_cuota_organizacion
 
-from .models import Archivo
+from .models import Archivo, Carpeta
+from subscriptions.models import MiembroOrganizacion
 
 
 def leer_cuota_desplegada(organizacion_id, using="default"):
@@ -58,6 +59,19 @@ class ProveedorStorage:
         if not filas or filas[0][1] not in NIVELES_ESCRITURA:
             raise PermissionDenied()
         return DestinoAutorizado(solicitante_id, filas[0][0], carpeta_id)
+
+    def resolver_destino_organizacion(self, *, solicitante_id, carpeta_id, organizacion_id):
+        """Ámbito explícito, con membresía y carpeta revalidadas en cada llamada."""
+        nivel = MiembroOrganizacion.objects.using(self.using).filter(
+            usuario_id=solicitante_id, organizacion_id=organizacion_id,
+        ).values_list("nivel_rol", flat=True).first()
+        if type(nivel) is not int or nivel not in NIVELES_ESCRITURA:
+            raise PermissionDenied()
+        if carpeta_id is not None and not Carpeta.objects.using(self.using).filter(
+            pk=carpeta_id, organizacion_id=organizacion_id, en_papelera=False,
+        ).exists():
+            raise ErrorCarga(CodigoError.NO_ENCONTRADO)
+        return DestinoAutorizado(solicitante_id, organizacion_id, carpeta_id)
 
     def leer_cuota(self, *, organizacion_id):
         try:

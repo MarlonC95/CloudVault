@@ -307,6 +307,11 @@ class PerfilView(ContratoAPIMixin, APIView):
         })
 
     def _resolver_ambito(self, usuario):
+        pedido = self.request.query_params.get("organizacion_id")
+        if pedido == "":
+            raise ValidationError({"organizacion_id": ["Se requiere una organización explícita."]})
+        if pedido is not None:
+            return resolver_organizacion(usuario, pedido)
         try:
             return resolver_organizacion(usuario)
         except Exception:

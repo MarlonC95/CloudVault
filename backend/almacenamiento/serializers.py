@@ -88,6 +88,7 @@ class IniciarCargaInputSerializer(SerializerEstricto):
     tamano_bytes = BytesEnteros(min_value=0, max_value=TAMANO_SQL_MAXIMO)
     tipo_mime = TipoMime()
     carpeta_id = UUIDTexto(required=False, allow_null=True, default=None)
+    organizacion_id = UUIDTexto(required=False)
 
     def validate_tamano_bytes(self, value):
         politica = self.context.get("politica", PoliticaCarga())

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ChevronLeft, Folder as FolderIcon } from 'lucide-react'
+import { useOrganizacion } from '../context/organizacionesContexto'
 import { useArchivos } from '../context/archivosContexto'
 import { subirArchivo, obtenerUrlDescarga } from '../services/archivosService'
 import { convertirEnErrorApi, obtenerMensajeDeCampo } from '../services/errorApi'
@@ -26,6 +27,7 @@ interface EstadoNavegacionDashboard {
 }
 
 function DashboardPage() {
+  const { organizacion, ejecutar } = useOrganizacion()
   const navegar = useNavigate()
   const ubicacion = useLocation()
   const { carpetas, archivos, cargando, error, refrescar, crearCarpeta, moverArchivo, enviarAPapelera } = useArchivos()
@@ -78,7 +80,7 @@ function DashboardPage() {
   async function manejarDescargar(archivo: Archivo) {
     try {
       setErrorAccion(null)
-      const descarga = await obtenerUrlDescarga(archivo.id)
+      const descarga = await ejecutar(() => obtenerUrlDescarga(archivo.id))
       if (!descarga.url) throw new Error('La API no devolvió una URL de descarga.')
       const enlace = document.createElement('a')
       enlace.href = descarga.url
@@ -118,11 +120,11 @@ function DashboardPage() {
     const entradas = archivosSubidos.map((archivo) => ({ archivo, id: crypto.randomUUID() }))
     setCargas((anteriores) => [...anteriores, ...entradas.map(({ archivo, id }) => ({ id, nombreArchivo: archivo.name, tamano: formatearTamanoBytes(archivo.size), progreso: 0, estado: 'en-cola' as const }))])
     setMostrarModalSubida(false)
-    void (async () => {
+    void ejecutar(async () => {
       for (const { archivo, id } of entradas) {
         setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, estado: 'subiendo' } : carga))
         try {
-          await subirArchivo(archivo, carpetaActivaId, (progreso) => setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, progreso } : carga)))
+          await subirArchivo(archivo, carpetaActivaId, organizacion.id, (progreso) => setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, progreso } : carga)))
           setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, progreso: 100, estado: 'completado' } : carga))
           await refrescar()
         } catch (causa) {
@@ -130,7 +132,7 @@ function DashboardPage() {
           setCargas((anteriores) => anteriores.map((carga) => carga.id === id ? { ...carga, estado: 'error', mensajeError } : carga))
         }
       }
-    })()
+    })
   }
 
   return (
@@ -169,7 +171,7 @@ function DashboardPage() {
                 }}
               >
                 <ChevronLeft size={16} />
-                Mi Unidad
+                {organizacion.nombre}
                 <span style={{ color: '#CBD5E1' }}>/</span>
                 <FolderIcon size={14} color={carpetaActiva.color} />
                 {carpetaActiva.nombre}
@@ -202,7 +204,7 @@ function DashboardPage() {
               onCompartir={setArchivoParaCompartir}
               onEliminar={manejarEliminar}
               onMover={setArchivoParaMover}
-              titulo={carpetaActiva ? carpetaActiva.nombre.toUpperCase() : 'TODOS LOS ARCHIVOS'}
+              titulo={carpetaActiva ? carpetaActiva.nombre.toUpperCase() : `ARCHIVOS DE ${organizacion.nombre.toUpperCase()}`}
             />
           </div>
 

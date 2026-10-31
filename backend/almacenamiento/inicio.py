@@ -11,6 +11,7 @@ from auth_workspaces.models import LogAuditoria
 
 from .contrato import CodigoError, PoliticaCarga
 from .errores import ErrorCarga
+from .integracion import resolver_destino_en_organizacion
 from .persistencia import IntegridadCarga, RepositorioCargas
 from .s3 import FirmaS3, nueva_clave_temporal
 from .serializers import IniciarCargaInputSerializer, IniciarCargaSuccessSerializer
@@ -45,8 +46,14 @@ class ServicioInicioCargas:
             raise ErrorCarga(CodigoError.TOKEN_INVALIDO)
         datos = entrada.validated_data
         servicios = self.servicios_factory()
-        destino = servicios.resolver_destino(solicitante_id=solicitante_id,
-                                             carpeta_id=datos["carpeta_id"])
+        def resolver():
+            argumentos = {"solicitante_id": solicitante_id, "carpeta_id": datos["carpeta_id"]}
+            if "organizacion_id" in datos:
+                return resolver_destino_en_organizacion(
+                    servicios, **argumentos, organizacion_id=datos["organizacion_id"])
+            return servicios.resolver_destino(**argumentos)
+
+        destino = resolver()
         if servicios.using != self.repo.using:
             raise IntegridadCarga("Los alias SQL deben coincidir")
         firmador = self.firmador_factory()  # Cliente explícito; sin acceso remoto.
@@ -58,8 +65,7 @@ class ServicioInicioCargas:
                                               ventana_segundos=self.ventana_segundos):
                     with self.repo.unidad_de_trabajo(organizacion_id=destino.organizacion_id):
                         with servicios.bloquear_cuota(organizacion_id=destino.organizacion_id):
-                            actual = servicios.resolver_destino(solicitante_id=solicitante_id,
-                                                                carpeta_id=datos["carpeta_id"])
+                            actual = resolver()
                             if actual != destino:
                                 raise ErrorCarga(CodigoError.SIN_PERMISO)
                             cuota = servicios.leer_cuota(organizacion_id=destino.organizacion_id)

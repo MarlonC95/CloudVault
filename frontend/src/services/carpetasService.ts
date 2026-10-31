@@ -33,20 +33,20 @@ function mapearCarpeta(carpeta: CarpetaApi): CarpetaConConteo {
 }
 
 /** GET /carpetas/ (contrato 3.1). Soporta paginación con `pagina`. */
-export async function listarCarpetas(pagina = 1): Promise<Pagina<CarpetaConConteo>> {
+export async function listarCarpetas(pagina: number, organizacionId: string): Promise<Pagina<CarpetaConConteo>> {
   const respuesta = await clienteApi.get<RespuestaApi<PaginaApi<CarpetaApi>>>('/carpetas/', {
-    params: { page: pagina },
+    params: { page: pagina, organizacion_id: organizacionId },
   })
   return mapearPagina(respuesta.data.data, mapearCarpeta)
 }
 
 /** POST /carpetas/ (contrato 3.2). Si no se mandan colores, el backend usa su paleta. */
-export async function crearCarpeta(nombre: string, color?: string, colorFondo?: string): Promise<CarpetaConConteo> {
+export async function crearCarpeta(nombre: string, organizacionId: string, color?: string, colorFondo?: string): Promise<CarpetaConConteo> {
   const respuesta = await clienteApi.post<RespuestaApi<CarpetaApi>>('/carpetas/', {
     nombre: nombre.trim(),
     color,
     color_fondo: colorFondo,
-  })
+  }, { params: { organizacion_id: organizacionId } })
   return mapearCarpeta(respuesta.data.data)
 }
 
@@ -54,15 +54,16 @@ export async function crearCarpeta(nombre: string, color?: string, colorFondo?: 
 export async function actualizarCarpeta(
   carpetaId: string,
   cambios: { nombre?: string; color?: string; colorFondo?: string },
+  organizacionId: string,
 ): Promise<void> {
   await clienteApi.patch(`/carpetas/${carpetaId}/`, {
     nombre: cambios.nombre?.trim(),
     color: cambios.color,
     color_fondo: cambios.colorFondo,
-  })
+  }, { params: { organizacion_id: organizacionId } })
 }
 
 /** DELETE /carpetas/{id}/ (contrato 3.5). Sus archivos pasan a "Sin carpeta". */
-export async function eliminarCarpeta(carpetaId: string): Promise<void> {
-  await clienteApi.delete(`/carpetas/${carpetaId}/`)
+export async function eliminarCarpeta(carpetaId: string, organizacionId: string): Promise<void> {
+  await clienteApi.delete(`/carpetas/${carpetaId}/`, { params: { organizacion_id: organizacionId } })
 }

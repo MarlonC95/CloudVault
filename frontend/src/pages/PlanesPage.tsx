@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { HardDrive, CheckCircle, Check, ChevronRight, X, Loader2 } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
+import { useOrganizacion } from '../context/organizacionesContexto'
 import { listarPlanes, obtenerMiPlan, suscribirPlan } from '../services/planesService'
 import { ErrorApi } from '../services/errorApi'
 import type { Plan, MiPlan, TipoFacturacion, Factura } from '../types/planes'
@@ -43,6 +44,7 @@ function construirAccion(planId: string, planActualId: string): { etiqueta: stri
 }
 
 function PlanesPage() {
+  const { organizacion, ejecutar } = useOrganizacion()
   const [facturacion, setFacturacion] = useState<TipoFacturacion>('mensual')
   const [planes, setPlanes] = useState<Plan[]>([])
   const [miPlan, setMiPlan] = useState<MiPlan | null>(null)
@@ -53,7 +55,7 @@ function PlanesPage() {
 
   async function cargarDatos() {
     try {
-      const [catalogo, actual] = await Promise.all([listarPlanes(), obtenerMiPlan()])
+      const [catalogo, actual] = await Promise.all([listarPlanes(), obtenerMiPlan(organizacion.id)])
       setPlanes(catalogo.resultados)
       setMiPlan(actual)
       setFacturacion(actual.plan.tipoFacturacion)
@@ -66,7 +68,7 @@ function PlanesPage() {
 
   useEffect(() => {
     let cancelado = false
-    Promise.all([listarPlanes(), obtenerMiPlan()])
+    Promise.all([listarPlanes(), obtenerMiPlan(organizacion.id)])
       .then(([catalogo, actual]) => {
         if (cancelado) return
         setPlanes(catalogo.resultados)
@@ -82,7 +84,7 @@ function PlanesPage() {
     return () => {
       cancelado = true
     }
-  }, [])
+  }, [organizacion.id])
 
   const planesCatalogo: PlanCatalogo[] = useMemo(() => {
     return planes.map((plan) => ({
@@ -104,7 +106,7 @@ function PlanesPage() {
     setSuscribiendoPlanId(plan.id)
     setErrorGeneral('')
     try {
-      await suscribirPlan(plan.id, facturacion)
+      await ejecutar(() => suscribirPlan(plan.id, facturacion, organizacion.id))
       await cargarDatos()
     } catch (error) {
       if (error instanceof ErrorApi && error.codigo === 'CUOTA_EXCEDIDA') {

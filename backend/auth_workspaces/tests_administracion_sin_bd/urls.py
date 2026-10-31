@@ -3,4 +3,7 @@
 from django.urls import include, path
 
 
-urlpatterns = [path("api/v1/", include("auth_workspaces.urls_organizaciones"))]
+urlpatterns = [
+    path("api/v1/", include("auth_workspaces.urls_organizaciones")),
+    path("api/v1/", include("auth_workspaces.urls_espacios")),
+]

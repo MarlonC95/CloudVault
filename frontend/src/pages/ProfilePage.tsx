@@ -17,6 +17,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
+import { useOrganizacion } from '../context/organizacionesContexto'
 import { obtenerPerfil, actualizarPerfil, cambiarContrasena, cambiarPalabraSecreta } from '../services/perfilService'
 import { ErrorApi } from '../services/errorApi'
 import type { PerfilUsuario } from '../types/perfil'
@@ -46,6 +47,7 @@ function calcularIniciales(nombre: string): string {
 }
 
 function ProfilePage() {
+  const { organizacion } = useOrganizacion()
   const navegar = useNavigate()
 
   const [perfil, setPerfil] = useState<PerfilUsuario | null>(null)
@@ -72,7 +74,7 @@ function ProfilePage() {
 
   async function cargarPerfil() {
     try {
-      const datos = await obtenerPerfil()
+      const datos = await obtenerPerfil(organizacion.id)
       setPerfil(datos)
       setNombre(datos.nombreCompleto)
       setCorreo(datos.correoElectronico)
@@ -86,7 +88,7 @@ function ProfilePage() {
 
   useEffect(() => {
     let cancelado = false
-    obtenerPerfil()
+    obtenerPerfil(organizacion.id)
       .then((datos) => {
         if (cancelado) return
         setPerfil(datos)
@@ -103,7 +105,7 @@ function ProfilePage() {
     return () => {
       cancelado = true
     }
-  }, [])
+  }, [organizacion.id])
 
   async function alternarEdicion() {
     if (modoEdicion && perfil) {
