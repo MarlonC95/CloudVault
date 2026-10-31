@@ -9,13 +9,14 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler, set_rollback
 
 from .organizaciones import LecturaMiembrosNoDisponible
+from .contratos_auditoria import AuditoriaNoDisponible
 
 
 logger = logging.getLogger(__name__)
 
 
 def error_de_organizaciones(exc, context):
-    if isinstance(exc, (OperationalError, LecturaMiembrosNoDisponible)):
+    if isinstance(exc, (OperationalError, LecturaMiembrosNoDisponible, AuditoriaNoDisponible)):
         set_rollback()
         return Response({"error": {"code": "SERVICE_UNAVAILABLE"}}, status=503)
     response = exception_handler(exc, context)
