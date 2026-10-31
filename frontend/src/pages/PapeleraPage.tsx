@@ -70,7 +70,7 @@ function Casilla({ marcada, color, onCambiar, etiqueta }: CasillaProps) {
 
 function PapeleraPage() {
   const navegar = useNavigate()
-  const { papelera, carpetas, cargando, error, refrescar, restaurarArchivos, eliminarDefinitivamente } = useArchivos()
+  const { papelera, carpetas, cargando, error, errorPapelera, refrescar, restaurarArchivos, eliminarDefinitivamente } = useArchivos()
 
   const [idsSeleccionados, setIdsSeleccionados] = useState<string[]>([])
   const [idsPorEliminar, setIdsPorEliminar] = useState<string[] | null>(null)
@@ -148,7 +148,7 @@ function PapeleraPage() {
     <DashboardLayout seccionActiva="papelera">
       <div style={{ padding: 32 }}>
         {cargando && <div role="status" style={{ color: '#64748B', fontSize: 13 }}>Cargando papelera...</div>}
-        {(error || errorAccion) && <div role="alert" style={{ color: COLOR_PELIGRO, fontSize: 13 }}>{errorAccion || error} <button type="button" onClick={() => { setErrorAccion(null); void refrescar().catch(() => undefined) }}>Reintentar</button></div>}
+        {(errorPapelera || error || errorAccion) && <div role="alert" style={{ color: COLOR_PELIGRO, fontSize: 13 }}>{errorAccion || errorPapelera || error} <button type="button" onClick={() => { setErrorAccion(null); void refrescar().catch(() => undefined) }}>Reintentar</button></div>}
         {/* Encabezado */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>

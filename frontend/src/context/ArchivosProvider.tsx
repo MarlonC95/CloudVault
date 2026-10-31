@@ -24,6 +24,7 @@ function ArchivosProvider({ children }: ArchivosProviderProps) {
   const [carpetas, setCarpetas] = useState<Carpeta[]>([])
   const [archivos, setArchivos] = useState<Archivo[]>([])
   const [papelera, setPapelera] = useState<ArchivoEnPapelera[]>([])
+  const [errorPapelera, setErrorPapelera] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -31,14 +32,20 @@ function ArchivosProvider({ children }: ArchivosProviderProps) {
     setCargando(true)
     setError(null)
     try {
-      const [nuevasCarpetas, nuevosArchivos, nuevaPapelera] = await Promise.all([
-        obtenerTodasLasPaginas(listarCarpetas),
-        obtenerTodasLasPaginas((pagina) => listarArchivos({ pagina })),
+      const [unidad, papeleraResultado] = await Promise.allSettled([
+        Promise.all([obtenerTodasLasPaginas(listarCarpetas),
+          obtenerTodasLasPaginas((pagina) => listarArchivos({ pagina }))]),
         obtenerTodasLasPaginas(listarPapelera),
       ])
-      setCarpetas(nuevasCarpetas)
-      setArchivos(nuevosArchivos)
-      setPapelera(nuevaPapelera)
+      setErrorPapelera(null)
+      if (papeleraResultado.status === 'fulfilled') setPapelera(papeleraResultado.value)
+      else {
+        setPapelera([])
+        setErrorPapelera(convertirEnErrorApi(papeleraResultado.reason).message)
+      }
+      if (unidad.status === 'rejected') throw unidad.reason
+      setCarpetas(unidad.value[0])
+      setArchivos(unidad.value[1])
     } catch (causa) {
       setError(convertirEnErrorApi(causa).message)
       throw causa
@@ -62,7 +69,7 @@ function ArchivosProvider({ children }: ArchivosProviderProps) {
   }
 
   const valor: ArchivosContextoValor = {
-    carpetas, archivos, papelera, cargando, error, refrescar,
+    carpetas, archivos, papelera, cargando, error, errorPapelera, refrescar,
     crearCarpeta: (nombre) => mutar(() => crearCarpetaApi(nombre)),
     renombrarCarpeta: (id, nombre) => mutar(() => actualizarCarpeta(id, { nombre })),
     renombrarArchivo: (id, nombre) => mutar(() => renombrarArchivoApi(id, nombre)),

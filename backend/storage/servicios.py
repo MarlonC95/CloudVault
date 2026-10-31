@@ -69,6 +69,11 @@ class ProveedorStorage:
     def registrar_archivo(self, *, archivo):
         if not connections[self.using].in_atomic_block:
             raise RuntimeError("La publicación requiere una transacción")
+        from .repositorio_papelera import nombre_disponible
+        from almacenamiento.errores import ConflictoNombreCarga
+        if not nombre_disponible(archivo.organizacion_id, archivo.carpeta_id,
+                                 archivo.nombre, using=self.using):
+            raise ConflictoNombreCarga()
         Archivo.objects.using(self.using).create(
             id=archivo.archivo_id, organizacion_id=archivo.organizacion_id,
             carpeta_id=archivo.carpeta_id, propietario_id=archivo.solicitante_id,
@@ -85,7 +90,9 @@ class ProveedorStorage:
                      WHERE s.archivo_id = a.id ORDER BY s.creado_en DESC LIMIT 1)
                 FROM archivos a JOIN miembros_organizacion m ON m.organizacion_id = a.organizacion_id
                 WHERE a.id = %s AND m.usuario_id = %s AND m.nivel_rol IN (0,2,3)
-                    AND NOT a.en_papelera""", [archivo_id, solicitante_id])
+                    AND NOT a.en_papelera""" + (
+                        " FOR SHARE OF a" if connections[self.using].in_atomic_block else ""),
+                [archivo_id, solicitante_id])
             fila = cursor.fetchone()
         if fila is None:
             raise ErrorCarga(CodigoError.NO_ENCONTRADO)

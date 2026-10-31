@@ -6,15 +6,15 @@ export const DIAS_RETENCION_PAPELERA = 30
 export const MILISEGUNDOS_POR_DIA = 24 * 60 * 60 * 1000
 
 /** Días que le quedan a un archivo en la papelera antes de borrarse de forma permanente. */
-export function calcularDiasRestantes(eliminadoEn?: string): number {
-  if (!eliminadoEn) return DIAS_RETENCION_PAPELERA
+export function calcularDiasRestantes(eliminadoEn?: string | null): number {
+  if (!eliminadoEn) return 0
 
   const diasTranscurridos = Math.floor((Date.now() - new Date(eliminadoEn).getTime()) / MILISEGUNDOS_POR_DIA)
   return Math.max(0, DIAS_RETENCION_PAPELERA - diasTranscurridos)
 }
 
 /** Fecha en la que el archivo pasó a la papelera, por ejemplo "02 Sep 2026". */
-export function formatearFechaEliminacion(eliminadoEn?: string): string {
+export function formatearFechaEliminacion(eliminadoEn?: string | null): string {
   return eliminadoEn ? formatearFechaCorta(eliminadoEn) : '—'
 }
 

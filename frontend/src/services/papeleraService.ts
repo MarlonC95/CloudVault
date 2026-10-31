@@ -9,8 +9,8 @@ interface ArchivoEnPapeleraApi {
   nombre: string
   tipo: string
   tamano_legible: string
-  eliminado_en: string
-  expira_en: string
+  eliminado_en: string | null
+  expira_en: string | null
   dias_restantes: number
   carpeta_id: string | null
 }

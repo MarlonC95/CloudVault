@@ -7,6 +7,7 @@ export interface ArchivosContextoValor {
   archivos: Archivo[]
   papelera: ArchivoEnPapelera[]
   cargando: boolean
+  errorPapelera: string | null
   error: string | null
   refrescar: () => Promise<void>
   crearCarpeta: (nombre: string) => Promise<void>
