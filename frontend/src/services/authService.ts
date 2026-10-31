@@ -33,7 +33,46 @@ interface SesionActiva {
   refreshVenceEnMs: number
 }
 
-let sesionActiva: SesionActiva | null = null
+const CLAVE_SESION_GUARDADA = 'cloudvault.sesion'
+
+/** Lee la sesión guardada en esta pestaña. Devuelve null si no hay nada o si los datos están dañados. */
+function leerSesionGuardada(): SesionActiva | null {
+  try {
+    const texto = window.sessionStorage.getItem(CLAVE_SESION_GUARDADA)
+    if (!texto) return null
+
+    const sesion = JSON.parse(texto) as Partial<SesionActiva>
+    const tieneFormatoValido =
+      typeof sesion.usuario?.id === 'string'
+      && typeof sesion.accessToken === 'string'
+      && typeof sesion.venceEnMs === 'number'
+      && typeof sesion.refreshToken === 'string'
+      && typeof sesion.refreshVenceEnMs === 'number'
+    return tieneFormatoValido ? (sesion as SesionActiva) : null
+  } catch {
+    return null
+  }
+}
+
+function guardarSesion(sesion: SesionActiva | null): void {
+  try {
+    if (sesion) {
+      window.sessionStorage.setItem(CLAVE_SESION_GUARDADA, JSON.stringify(sesion))
+    } else {
+      window.sessionStorage.removeItem(CLAVE_SESION_GUARDADA)
+    }
+  } catch {
+    // Si el navegador bloquea el almacenamiento, la sesión sigue funcionando solo en memoria.
+  }
+}
+
+/** Único lugar donde cambia la sesión: la guarda en memoria y en la pestaña, para que F5 no la pierda. */
+let sesionActiva: SesionActiva | null = leerSesionGuardada()
+
+function establecerSesion(sesion: SesionActiva | null): void {
+  sesionActiva = sesion
+  guardarSesion(sesion)
+}
 
 interface RespuestaRegistroApi {
   data: {
@@ -102,12 +141,12 @@ export function obtenerSesion(): SesionActiva | null {
   if (sesionActiva && (sesionActiva.refreshVenceEnMs === 0 || Date.now() < sesionActiva.refreshVenceEnMs)) {
     return sesionActiva
   }
-  sesionActiva = null
+  establecerSesion(null)
   return null
 }
 
 export function cerrarSesion(): void {
-  sesionActiva = null
+  establecerSesion(null)
 }
 
 /**
@@ -161,7 +200,7 @@ export async function registrarUsuario(datos: DatosRegistro): Promise<UsuarioAut
   }
 }
 
-/** Comprueba las credenciales con la API y conserva solo el acceso en memoria. */
+/** Comprueba las credenciales con la API y conserva la sesión en memoria y en la pestaña. */
 export async function iniciarSesion(datos: DatosLogin): Promise<RespuestaLogin> {
   try {
     const respuesta = await axios.post<RespuestaLoginApi>(
@@ -186,13 +225,13 @@ export async function iniciarSesion(datos: DatosLogin): Promise<RespuestaLogin> 
       nombreCompleto: data.usuario.nombre_completo,
       correoElectronico: data.usuario.correo_electronico,
     }
-    sesionActiva = {
+    establecerSesion({
       usuario,
       accessToken: data.tokens.access,
       venceEnMs,
       refreshToken: data.tokens.refresh,
       refreshVenceEnMs: vencimientoJwt(data.tokens.refresh),
-    }
+    })
     return {
       accessToken: data.tokens.access,
       refreshToken: data.tokens.refresh,
@@ -284,13 +323,13 @@ async function solicitarNuevoAccessToken(): Promise<string> {
     const venceEnMs = vencimientoJwt(access)
     if (venceEnMs <= Date.now()) throw new ErrorApi('TOKEN_INVALIDO')
 
-    sesionActiva = {
+    establecerSesion({
       ...sesion,
       accessToken: access,
       venceEnMs,
       refreshToken: refresh ?? sesion.refreshToken,
       refreshVenceEnMs: refresh ? vencimientoJwt(refresh) : sesion.refreshVenceEnMs,
-    }
+    })
     return access
   } catch (error) {
     throw convertirEnErrorApi(error)
