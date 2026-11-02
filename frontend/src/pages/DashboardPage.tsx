@@ -7,6 +7,7 @@ import { convertirEnErrorApi, obtenerMensajeDeCampo } from '../services/errorApi
 import { formatearTamanoBytes } from '../utils/formatoArchivo'
 import type { RangoFecha, RangoTamano } from '../utils/filtrosArchivos'
 import type { Archivo, CargaEnProgreso, TipoArchivo } from '../types/archivo'
+import type { RecursoCompartible } from '../types/enlaces'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import BuscadorArchivos from '../components/dashboard/BuscadorArchivos'
 import TarjetaCarpeta from '../components/dashboard/TarjetaCarpeta'
@@ -39,7 +40,9 @@ function DashboardPage() {
   const [filtroFecha, setFiltroFecha] = useState<RangoFecha>('cualquiera')
   const [filtroTamano, setFiltroTamano] = useState<RangoTamano>('cualquiera')
   const [archivoSeleccionado, setArchivoSeleccionado] = useState<Archivo | null>(null)
-  const [archivoParaCompartir, setArchivoParaCompartir] = useState<Archivo | null>(null)
+  const [recursoParaCompartir, setRecursoParaCompartir] = useState<RecursoCompartible | null>(null)
+  const compartirArchivo = (archivo: Archivo) =>
+    setRecursoParaCompartir({ tipo: 'archivo', id: archivo.id, nombre: archivo.nombre })
   const [archivoParaMover, setArchivoParaMover] = useState<Archivo | null>(null)
   const [mostrarModalSubida, setMostrarModalSubida] = useState(debeAbrirSubida)
   const [mostrarModalNuevaCarpeta, setMostrarModalNuevaCarpeta] = useState(false)
@@ -187,6 +190,7 @@ function DashboardPage() {
                       cantidadArchivos={carpeta.cantidadArchivos}
                       estaActiva={carpeta.id === carpetaActivaId}
                       onClick={() => setCarpetaActivaId(carpeta.id)}
+                      onCompartir={() => setRecursoParaCompartir({ tipo: 'carpeta', id: carpeta.id, nombre: carpeta.nombre })}
                     />
                   ))}
                   <TarjetaNuevaCarpeta onClick={() => setMostrarModalNuevaCarpeta(true)} />
@@ -199,7 +203,7 @@ function DashboardPage() {
               archivoSeleccionadoId={archivoSeleccionado?.id ?? null}
               onSeleccionarArchivo={setArchivoSeleccionado}
               onDescargar={manejarDescargar}
-              onCompartir={setArchivoParaCompartir}
+              onCompartir={compartirArchivo}
               onEliminar={manejarEliminar}
               onMover={setArchivoParaMover}
               titulo={carpetaActiva ? carpetaActiva.nombre.toUpperCase() : 'TODOS LOS ARCHIVOS'}
@@ -209,7 +213,7 @@ function DashboardPage() {
           <PanelDetalleArchivo
             archivo={archivoSeleccionado}
             onDescargar={manejarDescargar}
-            onCompartir={setArchivoParaCompartir}
+            onCompartir={compartirArchivo}
             onEliminar={manejarEliminar}
             onMover={setArchivoParaMover}
           />
@@ -224,7 +228,7 @@ function DashboardPage() {
         onConfirmarSubida={manejarConfirmarSubida}
       />
 
-      <ModalCompartir archivo={archivoParaCompartir} onCerrar={() => setArchivoParaCompartir(null)} />
+      <ModalCompartir recurso={recursoParaCompartir} onCerrar={() => setRecursoParaCompartir(null)} />
 
       <ModalMoverArchivo
         archivo={archivoParaMover}

@@ -35,15 +35,3 @@ export interface ArchivoReciente {
   tamano: string
   fechaModificacion: string
 }
-
-/** Archivo que otra persona compartió con el usuario (contrato 9). */
-export interface ArchivoCompartido {
-  id: string
-  archivoId: string
-  nombre: string
-  tipo: TipoArchivo
-  tamano: string
-  propietario: string
-  permiso: string
-  fechaModificacion: string
-}

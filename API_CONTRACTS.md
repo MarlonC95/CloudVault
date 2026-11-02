@@ -1118,7 +1118,7 @@ Respalda `DashboardPage.tsx:61` y el botón "Descargar" del
 { "error": { "code": "NO_ENCONTRADO" } }
 ```
 
-### 5.2 `GET /api/v1/archivos/{id}/vista-previa/` — 🆕 Pendiente
+### 5.2 `GET /api/v1/archivos/{id}/vista-previa/` — ✅ Implementado (miembros e invitados, §6.8)
 
 URL temporal para previsualizar (imágenes, PDF). Respalda "Vista previa" del
 menú de `TablaArchivos.tsx`.
@@ -1145,121 +1145,164 @@ menú de `TablaArchivos.tsx`.
 
 ---
 
-## 6. Compartir archivos (enlaces públicos)
+## 6. Compartir archivos y carpetas (personas y enlaces)
 
-Respalda `ModalCompartir.tsx` (`TODO` en línea 16, `POST /api/enlaces-publicos/`).
+Funciona como Google Drive. Este contrato **sustituye** a `docs/CONTRATO_API.md` §4 (`sharing`). Lo implementa la app `backend/compartir/` sobre las tablas de `database/compartir.sql`.
 
-### 6.1 `POST /api/v1/enlaces-compartidos/` — 🆕 Pendiente
+**Niveles de acceso** (`rol` + `permite_descarga`):
 
-**Headers:** `Authorization: Bearer <access>`
+| Nivel en la UI | `rol` / `tipo_permiso` | `permite_descarga` | Recursos |
+|---|---|---|---|
+| Solo ver | `LECTURA` | `false` | archivo o carpeta |
+| Ver y descargar | `LECTURA` | `true` | archivo o carpeta |
+| Editor (puede subir) | `ESCRITURA` | siempre `true` | solo carpetas |
 
-**Body**
+**Reglas comunes:**
+- Una carpeta se comparte con todo su contenido.
+- Solo administra el recurso el dueño del espacio; si no lo es, recibe **404** `NO_ENCONTRADO`.
+- Los recursos se identifican con `archivo_id` **o** `carpeta_id` (UUID), nunca con los dos. Si llegan ambos o ninguno, la respuesta es **400** `VALIDATION_ERROR` en `non_field_errors`.
+- Las subidas de un editor consumen la cuota del dueño.
 
-```json
-{
-  "archivo_id": "1",
-  "expira_en": "2026-10-11T18:30:00Z",
-  "password": null,
-  "permite_descarga": true
-}
-```
+**Fuera de alcance:** notificar por correo, descargar en ZIP, que un editor vuelva a compartir y transferir la propiedad.
 
-`expira_en` y `password` son opcionales (por defecto 7 días, sin contraseña).
+### 6.1 `GET /api/v1/enlaces-compartidos/?archivo_id=|carpeta_id=` — ✅ Implementado
 
-**201 Created**
+Devuelve el enlace del recurso (hay como mucho uno por recurso), o `null` si no tiene.
 
 ```json
 {
   "data": {
-    "id": "enlace-1700000000002",
-    "archivo_id": "1",
-    "url_compartida": "https://cloudvault.app/compartido/ab12cd34ef56",
-    "token": "ab12cd34ef56",
-    "expira_en": "2026-10-11T18:30:00Z",
-    "password_protegido": false,
+    "id": "…uuid…",
+    "token": "Qm9…43 caracteres",
+    "archivo_id": null,
+    "carpeta_id": "…uuid…",
+    "rol": "LECTURA",
     "permite_descarga": true,
-    "creado_en": "2026-10-04T18:30:00Z"
+    "requiere_password": false,
+    "fecha_expiracion": null,
+    "fecha_creacion": "2026-10-30T15:00:00Z"
   }
 }
 ```
 
-**404** `NO_ENCONTRADO`
+La URL que se comparte la arma el frontend: `https://<frontend>/s/{token}`. El token se guarda en claro y solo puede leerlo el dueño.
+
+### 6.2 `POST /api/v1/enlaces-compartidos/` — ✅ Implementado
+
+Crea el enlace (**201**) o actualiza el existente (**200**). El token se conserva.
 
 ```json
-{ "error": { "code": "NO_ENCONTRADO" } }
+{ "carpeta_id": "…uuid…", "rol": "ESCRITURA", "permite_descarga": true,
+  "fecha_expiracion": "2026-11-30T23:59:59Z", "password": "opcional" }
 ```
 
-### 6.2 `GET /api/v1/enlaces-compartidos/` — 🆕 Pendiente
+- `fecha_expiracion`: ISO 8601 futura, o `null` para que no caduque. Una fecha pasada devuelve **400**.
+- `password`: si se **omite**, se conserva la actual; `null` o `""` la quitan. Admite hasta 128 caracteres. Cambiarla o quitarla invalida los accesos ya concedidos (6.10).
+- `ESCRITURA` en un archivo devuelve **400** en `rol`.
 
-Listado de enlaces creados por el usuario.
+### 6.3 `DELETE /api/v1/enlaces-compartidos/{id}/` — ✅ Implementado
 
-**Headers:** `Authorization: Bearer <access>`
+**204.** Desactiva el enlace. Las personas que se unieron por él pierden el acceso, salvo que el dueño haya editado su permiso (6.6).
 
-**200 OK**
+### 6.4 `GET /api/v1/permisos-recurso/?archivo_id=|carpeta_id=` — ✅ Implementado
+
+Personas con acceso al recurso, ordenadas por antigüedad.
 
 ```json
-{
-  "data": {
-    "count": 1,
-    "next": null,
-    "previous": null,
-    "results": [
-      {
-        "id": "enlace-1700000000002",
-        "archivo_id": "1",
-        "nombre_archivo": "Arquitectura_PaaS_v1.pdf",
-        "url_compartida": "https://cloudvault.app/compartido/ab12cd34ef56",
-        "expira_en": "2026-10-11T18:30:00Z",
-        "password_protegido": false,
-        "activo": true,
-        "creado_en": "2026-10-04T18:30:00Z"
-      }
-    ]
-  }
-}
+{ "data": [ { "id": 12, "usuario": { "id": "…uuid…", "correo": "ana@x.com", "nombre": "Ana" },
+              "tipo_permiso": "LECTURA", "permite_descarga": false,
+              "via_enlace": true, "fecha_creacion": "…" } ] }
 ```
 
-### 6.3 `DELETE /api/v1/enlaces-compartidos/{id}/` — 🆕 Pendiente
+`via_enlace: true` indica que la persona abrió el enlace con su sesión iniciada. En ese caso, su nivel es el del enlace y caduca con él.
 
-**Headers:** `Authorization: Bearer <access>`
-
-**204 No Content** — sin cuerpo.
-
-**404** `NO_ENCONTRADO`
+### 6.5 `POST /api/v1/permisos-recurso/` — ✅ Implementado
 
 ```json
-{ "error": { "code": "NO_ENCONTRADO" } }
+{ "archivo_id": "…uuid…", "correo": "ana@x.com", "tipo_permiso": "LECTURA", "permite_descarga": true }
 ```
 
-### 6.4 `GET /api/v1/publico/{token}/` — 🆕 Pendiente (sin auth)
+- Responde **201** si es un permiso nuevo y **200** si la persona ya tenía uno, que se reemplaza.
+- Si el correo no pertenece a un usuario activo o es de un miembro del propio espacio, responde **400** con el error en `correo`.
 
-Acceso a un archivo compartido. No requiere `Authorization`.
+### 6.6 `PATCH /api/v1/permisos-recurso/{id}/` · `DELETE /api/v1/permisos-recurso/{id}/` — ✅ Implementado
 
-**Query param opcional:** `password` (si el enlace está protegido).
+- El `PATCH` acepta `tipo_permiso` y/o `permite_descarga` y responde **200** con el permiso. Un permiso obtenido por enlace pasa a ser directo, de modo que sobrevive aunque el enlace se desactive.
+- El `DELETE` responde **204**.
 
-**200 OK**
+### 6.7 `GET /api/v1/compartidos-conmigo/` — ✅ Implementado
+
+Sustituye a la antigua §9. Devuelve una lista plana, sin paginar, con lo más reciente primero. No incluye los permisos caducados ni los recursos que están en la papelera.
 
 ```json
-{
-  "data": {
-    "nombre": "Arquitectura_PaaS_v1.pdf",
-    "tipo": "pdf",
-    "tamano_legible": "4.2 MB",
-    "url_descarga": "https://minio.local/cloudvault/...&X-Amz-Signature=...",
-    "permite_descarga": true,
-    "expira_en": "2026-10-11T18:30:00Z"
-  }
-}
+{ "data": [ { "tipo": "carpeta", "id": "…", "nombre": "Proyecto", "rol": "ESCRITURA",
+              "permite_descarga": true, "tamano_bytes": null, "tipo_mime": null } ] }
 ```
 
-**404** `NO_ENCONTRADO` (token inválido o expirado) / **403** `SIN_PERMISO`
-(contraseña incorrecta)
+### 6.8 `GET /api/v1/compartidos-conmigo/carpetas/{id}/contenido/` — ✅ Implementado
+
+Navega por una carpeta compartida (o por una de sus subcarpetas).
 
 ```json
-{ "error": { "code": "NO_ENCONTRADO" } }
+{ "data": { "carpeta": { "id": "…", "nombre": "Proyecto", "padre_id": null },
+            "rol": "ESCRITURA", "permite_descarga": true, "puede_subir": true,
+            "carpetas": [ { "id": "…", "nombre": "Fotos" } ],
+            "archivos": [ { "id": "…", "nombre": "a.pdf", "tamano_bytes": 1024,
+                            "tipo_mime": "application/pdf", "fecha_modificacion": "…" } ] } }
 ```
+
+- `padre_id` es `null` cuando el padre no es accesible, es decir, en la raíz de lo compartido.
+- Para ver y descargar se usan `GET /archivos/{id}/vista-previa/` (5.2, ya implementado) y `GET /archivos/{id}/descarga/`. Ambos aceptan a los invitados; la descarga exige `permite_descarga`.
+- Las subidas (§4) a una carpeta con `ESCRITURA` se aceptan.
+
+### 6.9 `GET /api/v1/publico/{token}/` — ✅ Implementado (sesión opcional)
+
+- Si llega `Authorization`, se usa la sesión. Un token caducado no da 401: la petición se trata como anónima.
+- Si el enlace tiene contraseña y aún no se verificó, la respuesta es `{"tipo": "carpeta", "requiere_password": true}`.
+- Una vez verificado, la respuesta es la siguiente:
+
+```json
+{ "data": { "tipo": "carpeta", "id": "…", "nombre": "Proyecto", "rol": "ESCRITURA",
+            "permite_descarga": true, "requiere_password": false,
+            "unido": true, "puede_subir": true } }
+```
+
+- Si el recurso es un archivo, la respuesta añade `tamano_bytes` y `tipo_mime`.
+- Con sesión iniciada, abrir el enlace **une** al usuario (`unido: true`). Desde ese momento lo ve en *Compartidos conmigo* con el nivel del enlace.
+- Subir archivos por enlace exige sesión: `puede_subir` solo es `true` con usuario autenticado y rol `ESCRITURA`.
+- **404** `NO_ENCONTRADO`: el enlace no existe, se desactivó o caducó.
+- Todas las rutas `/publico/` envían `Cache-Control: no-store` y `Referrer-Policy: no-referrer`, y tienen un límite de `COMPARTIR_PUBLICO_RATE` (60/min por IP, por defecto).
+
+### 6.10 `POST /api/v1/publico/{token}/acceso/` — ✅ Implementado
+
+Body: `{"password": "…"}`. Respuesta:
+
+```json
+{ "data": { "share_token": "…", "expira_en": "…" } }
+```
+
+- El `share_token` vale 15 minutos y se envía en la cabecera `X-Share-Token` en las rutas 6.9 a 6.12. El frontend lo guarda en `sessionStorage`.
+- Una contraseña incorrecta devuelve **403** `SIN_PERMISO`.
+- Tiene un límite de `COMPARTIR_PASSWORD_RATE` (10/hora por IP y enlace, por defecto); al superarlo responde **429** `RATE_LIMITED`.
+
+### 6.11 `GET /api/v1/publico/{token}/contenido/?carpeta_id=` — ✅ Implementado
+
+Solo para enlaces de carpeta. Tiene la misma forma que 6.8, pero sin `puede_subir`. Sin `carpeta_id` devuelve la raíz del enlace, cuyo `padre_id` es `null`.
+
+- **403** `SIN_PERMISO`: falta la contraseña o caducó el `X-Share-Token`.
+- **404**: la carpeta está fuera del enlace.
+
+### 6.12 `GET /api/v1/publico/{token}/archivos/{id}/?accion=ver|descargar` — ✅ Implementado
+
+Devuelve una URL temporal: `{url_vista_previa | url_descarga, nombre, tipo, expira_en}`.
+
+- `descargar` sin `permite_descarga` devuelve **403**.
+- Un archivo fuera del enlace devuelve **404**.
+- Las descargas quedan registradas en la auditoría (`DESCARGA_ENLACE`).
+- "Solo ver" se aplica en la interfaz y en esta ruta. La URL de vista previa permite guardar el contenido mientras está vigente, igual que una vista previa de Drive.
 
 ---
+
 
 ## 7. Revisión de Mi Unidad / Almacenamiento
 
@@ -1423,44 +1466,7 @@ Borrado definitivo (elimina también el objeto del storage).
 
 ## 9. Compartidos conmigo
 
-Módulo "Compartidos conmigo" del menú (`DashboardLayout.tsx`).
-
-### 9.1 `GET /api/v1/compartidos-conmigo/` — 🆕 Pendiente
-
-**Headers:** `Authorization: Bearer <access>`
-
-**Query params:** `page`, `busqueda`, `tipo`.
-
-**200 OK**
-
-```json
-{
-  "data": {
-    "count": 1,
-    "next": null,
-    "previous": null,
-    "results": [
-      {
-        "id": "share-1",
-        "archivo_id": "10",
-        "nombre": "Presupuesto_Q4.xlsx",
-        "tipo": "xlsx",
-        "tamano_legible": "840 KB",
-        "propietario": { "id": "2", "nombre_completo": "Carlos Ruiz" },
-        "permiso": "lectura",
-        "fecha_modificacion": "2026-10-02T14:00:00Z",
-        "carpeta_id": null
-      }
-    ]
-  }
-}
-```
-
-**401** `NO_AUTENTICADO`
-
-```json
-{ "error": { "code": "NO_AUTENTICADO" } }
-```
+Movido a §6.7 y §6.8.
 
 ---
 
@@ -1700,17 +1706,16 @@ Historial de facturación.
 | 4.2 | `/api/v1/archivos/{id}/confirmar-carga/` | POST | 🆕 Pendiente |
 | 4.3 | `/api/v1/archivos/{id}/estado-carga/` | GET | 🆕 Pendiente |
 | 5.1 | `/api/v1/archivos/{id}/descarga/` | GET | 🆕 Pendiente |
-| 5.2 | `/api/v1/archivos/{id}/vista-previa/` | GET | 🆕 Pendiente |
-| 6.1 | `/api/v1/enlaces-compartidos/` | POST | 🆕 Pendiente |
-| 6.2 | `/api/v1/enlaces-compartidos/` | GET | 🆕 Pendiente |
-| 6.3 | `/api/v1/enlaces-compartidos/{id}/` | DELETE | 🆕 Pendiente |
-| 6.4 | `/api/v1/publico/{token}/` | GET | 🆕 Pendiente (sin auth) |
+| 5.2 | `/api/v1/archivos/{id}/vista-previa/` | GET | ✅ Implementado |
+| 6.1–6.3 | `/api/v1/enlaces-compartidos/` (+ `{id}/`) | GET, POST, DELETE | ✅ Implementado |
+| 6.4–6.6 | `/api/v1/permisos-recurso/` (+ `{id}/`) | GET, POST, PATCH, DELETE | ✅ Implementado |
+| 6.7–6.8 | `/api/v1/compartidos-conmigo/` (+ `carpetas/{id}/contenido/`) | GET | ✅ Implementado |
+| 6.9–6.12 | `/api/v1/publico/{token}/` (+ `acceso/`, `contenido/`, `archivos/{id}/`) | GET, POST | ✅ Implementado (sesión opcional) |
 | 7.2 | `/api/v1/unidad/actividad/` | GET | 🆕 Pendiente |
 | 7.3 | `/api/v1/recientes/` | GET | 🆕 Pendiente |
 | 8.1 | `/api/v1/papelera/` | GET | 🆕 Pendiente |
 | 8.2 | `/api/v1/papelera/{id}/restaurar/` | POST | 🆕 Pendiente |
 | 8.3 | `/api/v1/papelera/{id}/` | DELETE | 🆕 Pendiente |
-| 9.1 | `/api/v1/compartidos-conmigo/` | GET | 🆕 Pendiente |
 | 10.1 | `/api/v1/planes/` | GET | ✅ Implementado |
 | 10.2 | `/api/v1/mi-plan/` | GET | ✅ Implementado |
 | 10.3 | `/api/v1/mi-plan/suscribir/` | POST | ✅ Implementado |
@@ -1732,6 +1737,6 @@ Historial de facturación.
   - `DashboardPage.tsx:94` → 3.2 (crear carpeta)
   - `DashboardPage.tsx:100` → 4.1 (carga)
   - `ProfilePage.tsx:56` → 2.2 (perfil)
-  - `ModalCompartir.tsx:16` → 6.1 (enlaces)
+  - `ModalCompartir.tsx` → 6.1–6.6; `CompartidosPage.tsx` → 6.7–6.8; `EnlacePublicoPage.tsx` (`/s/:token`) → 6.9–6.12
   - `PlanesPage.tsx:265` → 10.3 (suscribir)
   - `DashboardLayout.tsx:51` → 3.11 / 10.2 (almacenamiento)

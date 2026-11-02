@@ -117,7 +117,7 @@ Mientras tanto, con backend conectado: la tabla de archivos saldrá **vacía** p
 ## 7. Otros huecos conocidos
 
 - `DELETE /archivos/{id}/` (papelera), `/papelera/`, restaurar: pendientes en backend. `manejarEliminar` sigue local.
-- Compartir (`/enlaces-compartidos/`): pendiente.
+- Compartir: implementado (`API_CONTRACTS.md` §6). `ModalCompartir` (personas y enlace), `/compartidos` y `/s/:token` (enlace público; subir exige sesión, `?next=` vuelve al enlace tras el login).
 - Paginación: más de 50 resultados llegan en otra página; hoy la UI no la maneja (para carpetas/archivos del usuario puede bastar con pedir más páginas o implementar "cargar más").
 - Sesión: el access token dura 15 min y `refresh` aún no existe; sin él la sesión se cae a los 15 min (dependencia con el módulo de auth).
 - IDs: son UUID (por ejemplo `3f2c…`), nunca `documentos`. No usar ids como claves de negocio ni rutas escritas a mano.

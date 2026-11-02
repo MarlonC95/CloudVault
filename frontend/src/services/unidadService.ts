@@ -2,7 +2,7 @@ import { clienteApi } from './clienteApi'
 import { formatearFechaRelativa } from '../utils/fechas'
 import type { RespuestaApi } from '../types/api'
 import type { TipoArchivo } from '../types/archivo'
-import type { ArchivoCompartido, ArchivoReciente, EventoActividad, ResumenAlmacenamiento } from '../types/unidad'
+import type { ArchivoReciente, EventoActividad, ResumenAlmacenamiento } from '../types/unidad'
 
 interface ResumenApi {
   usado_bytes: number
@@ -29,17 +29,6 @@ interface RecienteApi {
   nombre: string
   tipo: TipoArchivo
   tamano_legible: string
-  fecha_modificacion: string
-}
-
-interface CompartidoApi {
-  id: string
-  archivo_id: string
-  nombre: string
-  tipo: TipoArchivo
-  tamano_legible: string
-  propietario: { id: string; nombre_completo: string }
-  permiso: string
   fecha_modificacion: string
 }
 
@@ -88,21 +77,6 @@ export async function listarRecientes(): Promise<ArchivoReciente[]> {
     nombre: archivo.nombre,
     tipo: archivo.tipo,
     tamano: archivo.tamano_legible,
-    fechaModificacion: formatearFechaRelativa(archivo.fecha_modificacion),
-  }))
-}
-
-/** GET /compartidos-conmigo/ (contrato 9): archivos que otras personas compartieron con el usuario. */
-export async function listarCompartidosConmigo(): Promise<ArchivoCompartido[]> {
-  const respuesta = await clienteApi.get<RespuestaApi<ListaApi<CompartidoApi>>>('/compartidos-conmigo/')
-  return respuesta.data.data.results.map((archivo) => ({
-    id: archivo.id,
-    archivoId: archivo.archivo_id,
-    nombre: archivo.nombre,
-    tipo: archivo.tipo,
-    tamano: archivo.tamano_legible,
-    propietario: archivo.propietario.nombre_completo,
-    permiso: archivo.permiso,
     fechaModificacion: formatearFechaRelativa(archivo.fecha_modificacion),
   }))
 }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Cloud, Mail, Lock, Eye, EyeOff, ChevronRight } from 'lucide-react'
 import { ErrorLogin, iniciarSesion } from '../services/authService'
+import { destinoTrasLogin } from '../utils/redireccion'
 
 interface ErroresLogin {
   correoElectronico?: string
@@ -54,7 +55,7 @@ function LoginPage() {
     try {
       await iniciarSesion({ correoElectronico, contrasena })
       setContrasena('')
-      navegar('/dashboard', { replace: true })
+      navegar(destinoTrasLogin(ubicacion.search), { replace: true })
     } catch (error) {
       if (error instanceof ErrorLogin) {
         setErrores({

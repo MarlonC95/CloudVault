@@ -12,6 +12,8 @@ from almacenamiento.integracion import (
 )
 from almacenamiento.persistencia import RepositorioCargas
 from common.ambito import NIVELES_ESCRITURA
+from compartir.acceso import acceso_usuario
+from compartir.models import ESCRITURA
 from subscriptions.cuotas import CONSULTA_CUOTA, SinSuscripcionVigente, leer_cuota_organizacion
 
 from .models import Archivo
@@ -55,9 +57,14 @@ class ProveedorStorage:
             filas = cursor.fetchall()
         if len(filas) > 1:
             raise ErrorCarga(CodigoError.VALIDATION_ERROR)
-        if not filas or filas[0][1] not in NIVELES_ESCRITURA:
+        if filas and filas[0][1] in NIVELES_ESCRITURA:
+            return DestinoAutorizado(solicitante_id, filas[0][0], carpeta_id)
+        # Carpeta compartida con permiso de escritura: el archivo cuenta en la cuota del dueño.
+        acceso = (acceso_usuario(solicitante_id, carpeta_id=carpeta_id, using=self.using)
+                  if carpeta_id is not None else None)
+        if acceso is None or acceso.rol != ESCRITURA:
             raise PermissionDenied()
-        return DestinoAutorizado(solicitante_id, filas[0][0], carpeta_id)
+        return DestinoAutorizado(solicitante_id, acceso.organizacion_id, carpeta_id)
 
     def leer_cuota(self, *, organizacion_id):
         try:
@@ -82,13 +89,19 @@ class ProveedorStorage:
             cursor.execute("""SELECT a.id, a.organizacion_id, a.carpeta_id, a.nombre,
                     a.clave_s3, a.tamano_bytes, a.tipo_mime,
                     (SELECT s.checksum_sha256 FROM sesiones_carga s
-                     WHERE s.archivo_id = a.id ORDER BY s.creado_en DESC LIMIT 1)
-                FROM archivos a JOIN miembros_organizacion m ON m.organizacion_id = a.organizacion_id
-                WHERE a.id = %s AND m.usuario_id = %s AND m.nivel_rol IN (0,2,3)
-                    AND NOT a.en_papelera""", [archivo_id, solicitante_id])
+                     WHERE s.archivo_id = a.id ORDER BY s.creado_en DESC LIMIT 1),
+                    EXISTS(SELECT 1 FROM miembros_organizacion m WHERE m.organizacion_id = a.organizacion_id
+                           AND m.usuario_id = %s AND m.nivel_rol IN (0,2,3))
+                FROM archivos a WHERE a.id = %s AND NOT a.en_papelera""", [solicitante_id, archivo_id])
             fila = cursor.fetchone()
         if fila is None:
             raise ErrorCarga(CodigoError.NO_ENCONTRADO)
+        if not fila[8]:
+            acceso = acceso_usuario(solicitante_id, archivo_id=archivo_id, using=self.using)
+            if acceso is None:
+                raise ErrorCarga(CodigoError.NO_ENCONTRADO)
+            if not acceso.permite_descarga:
+                raise ErrorCarga(CodigoError.SIN_PERMISO)
         checksum = self._checksums.pop(archivo_id, None) or fila[7]
         return ArchivoVerificado(fila[0], solicitante_id, *fila[1:7], checksum)
 

@@ -26,7 +26,7 @@ interface ElementoMenu {
 
 const ELEMENTOS_EXPLORADOR: ElementoMenu[] = [
   { id: 'mi-unidad', etiqueta: 'Mi Unidad', icono: <HardDrive size={18} />, ruta: '/dashboard' },
-  { id: 'compartidos', etiqueta: 'Compartidos conmigo', icono: <Users size={18} />, ruta: '/dashboard' },
+  { id: 'compartidos', etiqueta: 'Compartidos conmigo', icono: <Users size={18} />, ruta: '/compartidos' },
   { id: 'recientes', etiqueta: 'Recientes', icono: <Clock size={18} />, ruta: '/dashboard' },
 ]
 

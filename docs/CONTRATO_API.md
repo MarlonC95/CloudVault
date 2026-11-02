@@ -1266,6 +1266,8 @@ La purga elimina objetos, confirma su ausencia y después ajusta registros/cuota
 
 ## 4. Módulo 3: Compartición, Enlaces Públicos y ACL (`sharing`)
 
+> **Sustituido** (2026-10-30) por `API_CONTRACTS.md` §6, implementado en `backend/compartir/`. Lo que sigue es la propuesta original y ya no es normativa.
+
 **Estado de todo el módulo: PROPUESTO. No hay endpoints ejecutables de este módulo en la rama revisada.**
 
 ### RF-09 — Enlaces Públicos con Expiración y Contraseña

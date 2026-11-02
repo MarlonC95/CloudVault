@@ -1,7 +1,8 @@
 """Runner de pruebas para el esquema propiedad del SQL desplegado.
 
 Crea la BD de pruebas y carga ``database/schema_desplegado.sql``: el DDL reconstruido de
-``public`` (tablas, restricciones, índices, triggers de cuota/marca de tiempo y planes).
+``public`` (tablas, restricciones, índices, triggers de cuota/marca de tiempo y planes),
+seguido de los scripts pendientes de aplicar por el DBA (``SCRIPTS_POSTERIORES``).
 Es la fuente de verdad: ``database/schema.sql`` del repositorio quedó desactualizado.
 Exige ``DB_TEST_NAME`` distinto de la BD real.
 """
@@ -12,6 +13,9 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.db import connections
 from django.test.runner import DiscoverRunner
+
+
+SCRIPTS_POSTERIORES = ("compartir.sql",)
 
 
 def _leer(nombre):
@@ -28,6 +32,8 @@ class CloudVaultTestRunner(DiscoverRunner):
         try:
             with connections["default"].cursor() as cursor:
                 cursor.execute(_leer("schema_desplegado.sql"))
+                for nombre in SCRIPTS_POSTERIORES:
+                    cursor.execute(_leer(nombre))
         except Exception:
             self.teardown_databases(old_config)
             raise

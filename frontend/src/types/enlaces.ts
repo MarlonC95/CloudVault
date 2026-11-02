@@ -1,31 +1,86 @@
-export interface DatosNuevoEnlace {
-  archivoId: string
-  /** Fecha ISO de caducidad. Si se omite, el backend usa 7 días. */
-  expiraEn?: string
-  password?: string | null
-  permiteDescarga: boolean
+export type RolCompartido = 'LECTURA' | 'ESCRITURA'
+export type TipoRecurso = 'archivo' | 'carpeta'
+
+/** Archivo o carpeta que se comparte; el backend recibe `archivo_id` o `carpeta_id` según el tipo. */
+export interface RecursoCompartible {
+  tipo: TipoRecurso
+  id: string
+  nombre: string
+}
+
+/** Nivel de acceso tal como lo elige el usuario: "solo ver", "ver y descargar" o "puede subir" (solo carpetas). */
+export type NivelAcceso = 'ver' | 'descargar' | 'subir'
+
+export const NIVELES_ACCESO: Record<NivelAcceso, { etiqueta: string; rol: RolCompartido; permiteDescarga: boolean }> = {
+  ver: { etiqueta: 'Solo ver', rol: 'LECTURA', permiteDescarga: false },
+  descargar: { etiqueta: 'Ver y descargar', rol: 'LECTURA', permiteDescarga: true },
+  subir: { etiqueta: 'Editor (puede subir)', rol: 'ESCRITURA', permiteDescarga: true },
+}
+
+export function nivelDe(rol: RolCompartido, permiteDescarga: boolean): NivelAcceso {
+  return rol === 'ESCRITURA' ? 'subir' : permiteDescarga ? 'descargar' : 'ver'
 }
 
 export interface EnlaceCompartido {
   id: string
-  urlCompartida: string
   token: string
-  passwordProtegido: boolean
+  rol: RolCompartido
   permiteDescarga: boolean
+  requierePassword: boolean
+  fechaExpiracion: string | null
 }
 
-export interface EnlaceActivo {
-  id: string
-  nombreArchivo: string
-  token: string
-  activo: boolean
+export interface DatosEnlace {
+  rol: RolCompartido
+  permiteDescarga: boolean
+  fechaExpiracion: string | null
+  /** `undefined` conserva la contraseña actual; `null` la quita. */
+  password?: string | null
 }
 
-export interface RecursoPublico {
+export interface PermisoUsuario {
+  id: number
+  correo: string
   nombre: string
-  tipo: string
-  tamanoLegible: string
-  urlDescarga: string
+  rol: RolCompartido
   permiteDescarga: boolean
-  expiraEn: string
+  viaEnlace: boolean
+}
+
+export interface ElementoCompartido {
+  tipo: TipoRecurso
+  id: string
+  nombre: string
+  rol: RolCompartido
+  permiteDescarga: boolean
+  tamanoBytes: number | null
+}
+
+export interface ArchivoDeCarpeta {
+  id: string
+  nombre: string
+  tamanoBytes: number
+  tipoMime: string
+}
+
+export interface ContenidoCarpeta {
+  carpeta: { id: string; nombre: string; padreId: string | null }
+  rol: RolCompartido
+  permiteDescarga: boolean
+  carpetas: { id: string; nombre: string }[]
+  archivos: ArchivoDeCarpeta[]
+}
+
+/** GET /publico/{token}/. Si `requierePassword` y aún no se verificó, solo llegan `tipo` y `requierePassword`. */
+export interface RecursoPublico {
+  tipo: TipoRecurso
+  requierePassword: boolean
+  bloqueado: boolean
+  id?: string
+  nombre?: string
+  rol?: RolCompartido
+  permiteDescarga?: boolean
+  unido?: boolean
+  puedeSubir?: boolean
+  tamanoBytes?: number
 }

@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "almacenamiento",
     "storage",
     "subscriptions",
+    "compartir",
 ]
 
 MIDDLEWARE = [
@@ -55,7 +56,7 @@ ALMACENAMIENTO_SERVICIOS_FACTORY = env(
     "ALMACENAMIENTO_SERVICIOS_FACTORY", default="storage.servicios.crear_servicios"
 )
 ALMACENAMIENTO_URLCONFS_NEGOCIO = env.list(
-    "ALMACENAMIENTO_URLCONFS_NEGOCIO", default=["storage.urls", "subscriptions.urls"]
+    "ALMACENAMIENTO_URLCONFS_NEGOCIO", default=["storage.urls", "subscriptions.urls", "compartir.urls"]
 )
 TEMPLATES = [
     {
@@ -127,6 +128,8 @@ LOGIN_IP_RATE = env("LOGIN_IP_RATE", default="20/hour")
 LOGIN_EMAIL_RATE = env("LOGIN_EMAIL_RATE", default="10/hour")
 RECOVERY_IP_RATE = env("RECOVERY_IP_RATE", default="20/hour")
 RECOVERY_EMAIL_RATE = env("RECOVERY_EMAIL_RATE", default="5/hour")
+COMPARTIR_PUBLICO_RATE = env("COMPARTIR_PUBLICO_RATE", default="60/min")
+COMPARTIR_PASSWORD_RATE = env("COMPARTIR_PASSWORD_RATE", default="10/hour")
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),

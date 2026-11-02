@@ -1,4 +1,4 @@
-import { Folder, ChevronRight } from 'lucide-react'
+import { Folder, ChevronRight, Share2 } from 'lucide-react'
 import type { Carpeta } from '../../types/archivo'
 
 interface TarjetaCarpetaProps {
@@ -6,9 +6,10 @@ interface TarjetaCarpetaProps {
   cantidadArchivos: number
   estaActiva: boolean
   onClick: () => void
+  onCompartir?: () => void
 }
 
-function TarjetaCarpeta({ carpeta, cantidadArchivos, estaActiva, onClick }: TarjetaCarpetaProps) {
+function TarjetaCarpeta({ carpeta, cantidadArchivos, estaActiva, onClick, onCompartir }: TarjetaCarpetaProps) {
   return (
     <div
       onClick={onClick}
@@ -43,7 +44,21 @@ function TarjetaCarpeta({ carpeta, cantidadArchivos, estaActiva, onClick }: Tarj
           {cantidadArchivos} archivo{cantidadArchivos === 1 ? '' : 's'}
         </p>
       </div>
-      <ChevronRight size={15} color="#CBD5E1" strokeWidth={2} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+      {onCompartir && (
+        <button
+          type="button"
+          className="btn btn-sm p-1"
+          style={{ marginLeft: 'auto', flexShrink: 0 }}
+          aria-label={`Compartir ${carpeta.nombre}`}
+          onClick={(evento) => {
+            evento.stopPropagation()
+            onCompartir()
+          }}
+        >
+          <Share2 size={15} color="#64748B" />
+        </button>
+      )}
+      <ChevronRight size={15} color="#CBD5E1" strokeWidth={2} style={{ marginLeft: onCompartir ? 0 : 'auto', flexShrink: 0 }} />
     </div>
   )
 }
