@@ -242,6 +242,97 @@ class ClienteS3:
             if exc.tipo != "ausente":
                 raise
 
+    def borrar_fisico_verificado(self, clave, *, max_versiones=1000):
+        """Elimina solo la clave técnica exacta y comprueba que no queden versiones.
+
+        Un bucket versionado o suspendido queda pendiente: el modelo actual no
+        registra todas las VersionId que pertenecen a esta generación. Para un
+        bucket no versionado, ListObjectVersions debe confirmar que no hay
+        historial de esta clave antes del DELETE y después de él.
+        """
+        clave = _clave(clave, propia=True)
+        if type(max_versiones) is not int or not 1 <= max_versiones <= 10000:
+            raise ValueError("Límite de versiones inválido")
+        versionado = self._operar("get_bucket_versioning")
+        estado_versionado = versionado.get("Status")
+        if estado_versionado not in (None, "Enabled", "Suspended"):
+            raise ErrorS3("incompatible")
+        if estado_versionado in ("Enabled", "Suspended"):
+            raise ErrorS3("incompatible")
+
+        marcador_clave = marcador_version = None
+        numero_entradas = 0
+        paginas = 0
+        version_nula_actual = False
+        while True:
+            paginas += 1
+            if paginas > max_versiones:
+                raise ErrorS3("incompatible")
+            parametros = {"Prefix": clave, "MaxKeys": min(1000, max_versiones + 1)}
+            if marcador_clave is not None:
+                parametros["KeyMarker"] = marcador_clave
+            if marcador_version is not None:
+                parametros["VersionIdMarker"] = marcador_version
+            respuesta = self._operar("list_object_versions", **parametros)
+            for campo in ("Versions", "DeleteMarkers"):
+                for entrada in respuesta.get(campo, []):
+                    if entrada.get("Key") == clave:
+                        # Solo el objeto actual de un bucket nunca versionado usa
+                        # VersionId=null. No se infiere propiedad de versiones históricas.
+                        if (estado_versionado is None and campo == "Versions"
+                                and entrada.get("VersionId") == "null"
+                                and entrada.get("IsLatest") is True
+                                and not version_nula_actual):
+                            version_nula_actual = True
+                        else:
+                            raise ErrorS3("incompatible")
+                    numero_entradas += 1
+                    if numero_entradas > max_versiones:
+                        raise ErrorS3("incompatible")
+            if not respuesta.get("IsTruncated"):
+                break
+            marcador_clave = respuesta.get("NextKeyMarker")
+            marcador_version = respuesta.get("NextVersionIdMarker")
+            if not marcador_clave:
+                raise ErrorS3("incompatible")
+
+        tamano_eliminado = 0
+        objeto_presente = False
+        try:
+            objeto_previo = self._operar("head_object", Key=clave)
+            tamano_eliminado = objeto_previo.get("ContentLength")
+            if type(tamano_eliminado) is not int or tamano_eliminado < 0:
+                raise ErrorS3()
+            objeto_presente = True
+        except ErrorS3 as exc:
+            if exc.tipo != "ausente":
+                raise
+
+        if version_nula_actual and not objeto_presente:
+            # Una versión listada como actual debe existir en HEAD. No borrar
+            # ante evidencia contradictoria ni crear un marcador por conjetura.
+            raise ErrorS3("incompatible")
+        if objeto_presente:
+            try:
+                self._operar("delete_object", Key=clave)
+            except ErrorS3 as exc:
+                if exc.tipo != "ausente":
+                    raise
+
+        # La enumeración posterior es la evidencia de que no quedan bytes ni
+        # marcadores de esta clave; un HEAD no detectaría versiones antiguas.
+        final = self._operar("list_object_versions", Prefix=clave, MaxKeys=1000)
+        if any(e.get("Key") == clave for campo in ("Versions", "DeleteMarkers")
+               for e in final.get(campo, [])) or final.get("IsTruncated"):
+            raise ErrorS3("incompatible")
+        try:
+            self._operar("head_object", Key=clave)
+        except ErrorS3 as exc:
+            if exc.tipo == "ausente":
+                return tamano_eliminado
+            raise
+        raise ErrorS3("incompatible")
+
     def publicar_una_vez(self, origen, destino, *, etag_origen):
         """Una invocación COPY, sin reintentos SDK ni metadatos activos del cliente.
 

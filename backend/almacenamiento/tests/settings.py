@@ -12,6 +12,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "auth_workspaces",
+    "subscriptions",
     "almacenamiento",
 ]
 AUTH_USER_MODEL = "auth_workspaces.Usuario"

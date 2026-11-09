@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import ArchivosProvider from '../context/ArchivosProvider'
+import OrganizacionesProvider from '../context/OrganizacionesProvider'
 import LoginPage from '../pages/LoginPage'
 import RegisterPage from '../pages/RegisterPage'
 import RecoverPasswordPage from '../pages/RecoverPasswordPage'
@@ -15,9 +16,9 @@ function RutaProtegida() {
   // El provider vive aquí (no sobre todo el router) para cargar archivos solo con sesión
   // y reiniciar su estado al cerrar sesión.
   return obtenerSesion() ? (
-    <ArchivosProvider>
+    <OrganizacionesProvider><ArchivosProvider>
       <Outlet />
-    </ArchivosProvider>
+    </ArchivosProvider></OrganizacionesProvider>
   ) : (
     <Navigate to="/login" replace />
   )

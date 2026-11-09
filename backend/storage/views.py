@@ -1,15 +1,17 @@
+from collections.abc import Mapping
+from types import SimpleNamespace
 from uuid import UUID
 
-from django.db import connections, transaction
-from django.db.models import Q, Sum
+from django.db import connections
+from django.db.models import F, Q, Sum
 from django.utils import timezone
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from almacenamiento.configuracion_s3 import ConfiguracionS3, ConfiguracionS3Invalida
-from almacenamiento.s3 import ClienteS3, ErrorS3
+from almacenamiento.configuracion_s3 import ConfiguracionS3
+from almacenamiento.s3 import ClienteS3
 from common.ambito import resolver_organizacion
 from common.errores import ContratoAPIMixin
 from common.formatting import bytes_legibles
@@ -18,6 +20,8 @@ from common.responses import fail, ok
 from subscriptions.cuotas import SinSuscripcionVigente
 
 from .models import Archivo, Carpeta
+from .papelera import ErrorPapelera, ServicioPapelera, identificador
+from .repositorio_papelera import RepositorioPapelera
 from .serializers import ArchivoSerializer, CarpetaSerializer, PapeleraSerializer
 from .servicios import leer_cuota_desplegada
 
@@ -29,6 +33,33 @@ def _organizacion_id(request):
     return request.data.get("organizacion_id")
 
 
+def _datos_mutacion_archivo(request, pk):
+    archivo_id = identificador(pk)
+    if not isinstance(request.data, Mapping):
+        from rest_framework.exceptions import ValidationError
+        raise ValidationError({"non_field_errors": ["El cuerpo debe ser un objeto JSON."]})
+    query = request.query_params.get("organizacion_id")
+    cuerpo = request.data.get("organizacion_id")
+    if query and cuerpo and identificador(query) != identificador(cuerpo):
+        from rest_framework.exceptions import ValidationError
+        raise ValidationError({"organizacion_id": ["El ámbito de la solicitud no coincide."]})
+    ambito = resolver_organizacion(request.user, _organizacion_id(request))
+    return {"solicitante_id": request.user.pk, "organizacion_id": ambito.organizacion_id,
+            "archivo_id": archivo_id}
+
+
+def _ambito_mutacion(request):
+    from rest_framework.exceptions import ValidationError
+
+    if not isinstance(request.data, Mapping) or set(request.data) - {"organizacion_id"}:
+        raise ValidationError({"non_field_errors": ["El cuerpo de la solicitud no es válido."]})
+    query = request.query_params.get("organizacion_id")
+    cuerpo = request.data.get("organizacion_id")
+    if query and cuerpo and identificador(query) != identificador(cuerpo):
+        raise ValidationError({"organizacion_id": ["El ámbito de la solicitud no coincide."]})
+    return resolver_organizacion(request.user, query or cuerpo, escritura=True)
+
+
 def _nombre(valor):
     return valor.strip() if isinstance(valor, str) else ""
 
@@ -38,6 +69,16 @@ def _uuid(valor):
         return UUID(str(valor))
     except (ValueError, TypeError, AttributeError):
         return None
+
+
+def coordinar_carpeta(metodo):
+    from functools import wraps
+    @wraps(metodo)
+    def ejecutar(self, request, *args, **kwargs):
+        ambito = self._ambito(escritura=True)
+        with RepositorioPapelera().transaccion(ambito.organizacion_id):
+            return metodo(self, request, *args, **kwargs)
+    return ejecutar
 
 
 class CarpetaViewSet(ContratoAPIMixin, viewsets.ModelViewSet):
@@ -77,11 +118,10 @@ class CarpetaViewSet(ContratoAPIMixin, viewsets.ModelViewSet):
         return Carpeta.objects.filter(pk=identificador, organizacion_id=organizacion_id, en_papelera=False).first() or False
 
     def _nombre_unico(self, nombre, padre_id, organizacion_id, exclude=None):
-        qs = Carpeta.objects.filter(organizacion_id=organizacion_id, padre_id=padre_id, en_papelera=False)
-        if exclude:
-            qs = qs.exclude(pk=exclude.pk)
-        return not qs.filter(nombre__iexact=nombre).exists()
+        return RepositorioPapelera().nombre_disponible(
+            organizacion_id, padre_id, nombre, excluir_carpeta=exclude.pk if exclude else None)
 
+    @coordinar_carpeta
     def create(self, request, *args, **kwargs):
         ambito = self._ambito(escritura=True)
         nombre = _nombre(request.data.get("nombre"))
@@ -95,6 +135,7 @@ class CarpetaViewSet(ContratoAPIMixin, viewsets.ModelViewSet):
         carpeta = Carpeta.objects.create(organizacion_id=ambito.organizacion_id, padre=padre, nombre=nombre)
         return ok(self.get_serializer(carpeta).data, status=201)
 
+    @coordinar_carpeta
     def update(self, request, *args, **kwargs):
         ambito = self._ambito(escritura=True)
         carpeta = self.get_object()
@@ -108,18 +149,13 @@ class CarpetaViewSet(ContratoAPIMixin, viewsets.ModelViewSet):
         return ok(self.get_serializer(carpeta).data)
 
     def destroy(self, request, *args, **kwargs):
-        self._ambito(escritura=True)
-        carpeta = self.get_object()
-        with transaction.atomic():
-            # Las referencias de archivos se conservan incluso en descendientes.
-            ids = []
-            pendientes = [carpeta]
-            while pendientes:
-                actual = pendientes.pop()
-                ids.append(actual.pk)
-                pendientes.extend(actual.subcarpetas.all())
-            Archivo.objects.filter(carpeta_id__in=ids).update(carpeta=None)
-            carpeta.delete()
+        ambito = _ambito_mutacion(request)
+        from .lotes_papelera import ServicioLotesCarpeta
+        ServicioLotesCarpeta().enviar(
+            solicitante_id=request.user.pk,
+            organizacion_id=ambito.organizacion_id,
+            carpeta_id=kwargs.get("pk"),
+        )
         return Response(status=204)
 
     @action(detail=True, methods=["get"])
@@ -131,6 +167,7 @@ class CarpetaViewSet(ContratoAPIMixin, viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=["post"])
+    @coordinar_carpeta
     def mover(self, request, pk=None):
         ambito = self._ambito(escritura=True)
         carpeta = self.get_object()
@@ -184,48 +221,42 @@ class ArchivoViewSet(ContratoAPIMixin, mixins.ListModelMixin, mixins.RetrieveMod
         return qs.order_by("-actualizado_en")
 
     def _nombre_unico(self, nombre, carpeta_id, organizacion_id, exclude=None):
-        qs = Archivo.objects.filter(organizacion_id=organizacion_id, carpeta_id=carpeta_id, en_papelera=False)
-        if exclude:
-            qs = qs.exclude(pk=exclude.pk)
-        return not qs.filter(nombre__iexact=nombre).exists()
+        return RepositorioPapelera().nombre_disponible(
+            organizacion_id, carpeta_id, nombre, excluir_archivo=exclude.pk if exclude else None)
 
     def partial_update(self, request, *args, **kwargs):
-        ambito = self._ambito(escritura=True)
-        archivo = self.get_object()
-        nombre = _nombre(request.data.get("nombre"))
-        if not nombre:
-            return fail("VALIDATION_ERROR", {"nombre": ["El nombre del archivo es obligatorio."]})
-        if not self._nombre_unico(nombre, archivo.carpeta_id, ambito.organizacion_id, archivo):
-            return fail("VALIDATION_ERROR", {"nombre": ["Ya existe un archivo con ese nombre."]}, status=409)
-        archivo.nombre = nombre
-        archivo.save(update_fields=["nombre", "actualizado_en"])
-        return ok(self.get_serializer(archivo).data)
+        datos = _datos_mutacion_archivo(request, kwargs.get("pk"))
+        with ServicioPapelera().proteger(**datos, eliminado=False) as archivo:
+            nombre = _nombre(request.data.get("nombre"))
+            if not nombre:
+                return fail("VALIDATION_ERROR", {"nombre": ["El nombre del archivo es obligatorio."]})
+            if not self._nombre_unico(nombre, archivo.carpeta_id, datos["organizacion_id"], archivo):
+                return fail("VALIDATION_ERROR", {"nombre": ["Ya existe un archivo con ese nombre."]}, status=409)
+            archivo.nombre = nombre
+            archivo.save(update_fields=["nombre", "actualizado_en"])
+            return ok(self.get_serializer(archivo).data)
 
     def destroy(self, request, *args, **kwargs):
-        self._ambito(escritura=True)
-        archivo = self.get_object()
-        archivo.en_papelera = True
-        archivo.fecha_papelera = timezone.now()
-        archivo.save(update_fields=["en_papelera", "fecha_papelera", "actualizado_en"])
+        ServicioPapelera().enviar(**_datos_mutacion_archivo(request, kwargs.get("pk")))
         return ok({"mensaje": "El archivo se movió a la papelera."})
 
     @action(detail=True, methods=["post"])
     def mover(self, request, pk=None):
-        ambito = self._ambito(escritura=True)
-        archivo = self.get_object()
-        valor = request.data.get("carpeta_id")
-        if valor in (None, "", "null"):
-            carpeta = None
-        else:
-            identificador = _uuid(valor)
-            carpeta = Carpeta.objects.filter(pk=identificador, organizacion_id=ambito.organizacion_id, en_papelera=False).first() if identificador else None
-            if carpeta is None:
-                return fail("VALIDATION_ERROR", {"carpeta_id": ["La carpeta indicada no existe."]})
-        if not self._nombre_unico(archivo.nombre, carpeta.pk if carpeta else None, ambito.organizacion_id, archivo):
-            return fail("VALIDATION_ERROR", {"nombre": ["Ya existe un archivo con ese nombre."]}, status=409)
-        archivo.carpeta = carpeta
-        archivo.save(update_fields=["carpeta", "actualizado_en"])
-        return ok(self.get_serializer(archivo).data)
+        datos = _datos_mutacion_archivo(request, pk)
+        with ServicioPapelera().proteger(**datos, eliminado=False) as archivo:
+            valor = request.data.get("carpeta_id")
+            if valor in (None, "", "null"):
+                carpeta = None
+            else:
+                identificador = _uuid(valor)
+                carpeta = Carpeta.objects.filter(pk=identificador, organizacion_id=datos["organizacion_id"], en_papelera=False).first() if identificador else None
+                if carpeta is None:
+                    return fail("VALIDATION_ERROR", {"carpeta_id": ["La carpeta indicada no existe."]})
+            if not self._nombre_unico(archivo.nombre, carpeta.pk if carpeta else None, datos["organizacion_id"], archivo):
+                return fail("VALIDATION_ERROR", {"nombre": ["Ya existe un archivo con ese nombre."]}, status=409)
+            archivo.carpeta = carpeta
+            archivo.save(update_fields=["carpeta", "actualizado_en"])
+            return ok(self.get_serializer(archivo).data)
 
 
 class PapeleraViewSet(ContratoAPIMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
@@ -236,33 +267,176 @@ class PapeleraViewSet(ContratoAPIMixin, mixins.ListModelMixin, viewsets.GenericV
     def _ambito(self, escritura=False):
         return resolver_organizacion(self.request.user, _organizacion_id(self.request), escritura=escritura)
 
+    def get_serializer_context(self):
+        contexto = super().get_serializer_context()
+        contexto["ahora_papelera"] = timezone.now()
+        return contexto
+
     def get_queryset(self):
-        return Archivo.objects.filter(organizacion_id=self._ambito().organizacion_id, en_papelera=True).order_by("-fecha_papelera")
+        from rest_framework.exceptions import PermissionDenied
+        from .permisos_papelera import LECTURA
+        ambito = self._ambito()
+        if ambito.nivel_rol not in (0, 3):
+            raise PermissionDenied()
+        qs = Archivo.objects.filter(organizacion_id=ambito.organizacion_id, en_papelera=True)
+        if ambito.nivel_rol == 3:
+            repo = RepositorioPapelera()
+            ids = [a.pk for a in qs.iterator() if set(repo.permisos(
+                self.request.user.pk, a, bloquear=False)) & LECTURA]
+            qs = qs.filter(pk__in=ids)
+        if getattr(getattr(self, "request", None), "query_params", {}).get("vista") == "raices":
+            from auth_workspaces.models import LogAuditoria
+            repo = RepositorioPapelera()
+            duplicados = []
+            raices_visibles = {}
+            for archivo in qs.iterator():
+                evento = repo.ultimo_evento(archivo)
+                detalles = evento.detalles if evento else {}
+                operacion = detalles.get("operacion_id") if isinstance(detalles, dict) else None
+                if detalles.get("origen") != "CARPETA" or not operacion:
+                    continue
+                lote = LogAuditoria.objects.filter(
+                    organizacion_id=ambito.organizacion_id,
+                    accion="PAPELERA_CARPETA_ENVIADA",
+                    detalles__version=1, detalles__operacion_id=operacion,
+                    detalles__cerrado=True).first()
+                if not lote or not isinstance(lote.detalles, dict):
+                    continue
+                raiz_id = lote.detalles.get("raiz_id")
+                if not raiz_id:
+                    continue
+                activa = Carpeta.objects.filter(
+                    pk=raiz_id, organizacion_id=ambito.organizacion_id,
+                    en_papelera=True).exists()
+                restaurada = LogAuditoria.objects.filter(
+                    organizacion_id=ambito.organizacion_id,
+                    accion="PAPELERA_CARPETA_RESTAURADA",
+                    detalles__operacion_id=operacion).exists()
+                visible = ambito.nivel_rol == 0
+                if activa and not visible and raiz_id not in raices_visibles:
+                    raiz = Carpeta.objects.filter(
+                        pk=raiz_id, organizacion_id=ambito.organizacion_id,
+                        en_papelera=True).first()
+                    raices_visibles[raiz_id] = bool(raiz and set(repo.permisos(
+                        self.request.user.pk, SimpleNamespace(
+                            pk=None, carpeta_id=raiz.pk,
+                            organizacion_id=ambito.organizacion_id), bloquear=False)) & LECTURA)
+                    visible = raices_visibles[raiz_id]
+                elif raiz_id in raices_visibles:
+                    visible = raices_visibles[raiz_id]
+                if activa and not restaurada and visible:
+                    duplicados.append(archivo.pk)
+            qs = qs.exclude(pk__in=duplicados)
+        return qs.order_by(F('fecha_papelera').desc(nulls_last=True), 'id')
 
     @action(detail=True, methods=["post"])
     def restaurar(self, request, pk=None):
-        self._ambito(escritura=True)
-        archivo = self.get_object()
-        if archivo.carpeta_id and (archivo.carpeta.en_papelera or archivo.carpeta.organizacion_id != archivo.organizacion_id):
-            archivo.carpeta = None
-        archivo.en_papelera = False
-        archivo.fecha_papelera = None
-        archivo.save(update_fields=["carpeta", "en_papelera", "fecha_papelera", "actualizado_en"])
+        if not isinstance(request.data, Mapping) or set(request.data) - {'organizacion_id'}:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'non_field_errors':['Cuerpo de restauración no válido.']})
+        ServicioPapelera().restaurar(**_datos_mutacion_archivo(request, pk))
         return ok({"mensaje": "El archivo se restauró correctamente."})
 
     def destroy(self, request, *args, **kwargs):
-        self._ambito(escritura=True)
-        archivo = self.get_object()
-        try:
-            cliente = ClienteS3(ConfiguracionS3.desde_entorno())
-            try:
-                cliente.borrar_tecnico(archivo.clave_s3)
-            finally:
-                cliente.cerrar()
-        except (ConfiguracionS3Invalida, ErrorS3, ValueError):
-            return fail("SERVICE_UNAVAILABLE", status=503)
-        archivo.delete()
+        datos = _datos_mutacion_archivo(request, kwargs.get("pk"))
+        ServicioPapelera().purgar(
+            **datos,
+            crear_cliente=lambda: ClienteS3(ConfiguracionS3.desde_entorno()),
+        )
         return Response(status=204)
+
+
+class PapeleraCarpetasView(ContratoAPIMixin, APIView):
+    """Extensión tipada; el listado antiguo de papelera sigue conteniendo archivos."""
+
+    def get(self, request):
+        from rest_framework.exceptions import PermissionDenied
+        from .lotes_papelera import listar_raices_carpeta
+        from .permisos_papelera import LECTURA
+
+        ambito = resolver_organizacion(request.user, _organizacion_id(request))
+        if ambito.nivel_rol not in (0, 3):
+            raise PermissionDenied()
+        elementos = listar_raices_carpeta(ambito.organizacion_id)
+        if ambito.nivel_rol == 3:
+            repo = RepositorioPapelera()
+            permitidos = []
+            for elemento in elementos:
+                recurso = Carpeta.objects.filter(
+                    pk=elemento["id"], organizacion_id=ambito.organizacion_id).first()
+                if recurso and set(repo.permisos(request.user.pk, SimpleNamespace(
+                        pk=None, carpeta_id=recurso.pk,
+                        organizacion_id=ambito.organizacion_id), bloquear=False)) & LECTURA:
+                    permitidos.append(elemento)
+            elementos = permitidos
+        for elemento in elementos:
+            elemento["puede_purgar"] = ambito.nivel_rol == 0
+        paginador = EnvelopePagination()
+        pagina = paginador.paginate_queryset(elementos, request, view=self)
+        respuesta = paginador.get_paginated_response(pagina)
+        respuesta.data["data"]["puede_vaciar"] = ambito.nivel_rol == 0
+        return respuesta
+
+
+class RestaurarCarpetaPapeleraView(ContratoAPIMixin, APIView):
+    def post(self, request, pk):
+        ambito = _ambito_mutacion(request)
+        from .lotes_papelera import ServicioLotesCarpeta
+        ServicioLotesCarpeta().restaurar(
+            solicitante_id=request.user.pk,
+            organizacion_id=ambito.organizacion_id,
+            carpeta_id=pk,
+        )
+        return ok({"mensaje": "La carpeta y sus elementos del lote se restauraron correctamente."})
+
+
+class PurgarCarpetaPapeleraView(ContratoAPIMixin, APIView):
+    def delete(self, request, pk):
+        ambito = _ambito_mutacion(request)
+        from .lotes_papelera import ServicioLotesCarpeta
+        ServicioLotesCarpeta().purgar(
+            solicitante_id=request.user.pk,
+            organizacion_id=ambito.organizacion_id,
+            carpeta_id=pk,
+            crear_cliente=lambda: ClienteS3(ConfiguracionS3.desde_entorno()),
+        )
+        return Response(status=204)
+
+
+class VaciadoPapeleraView(ContratoAPIMixin, APIView):
+    def post(self, request):
+        ambito = _ambito_mutacion(request)
+        from .lotes_papelera import ServicioLotesCarpeta
+        operacion = ServicioLotesCarpeta().vaciar(
+            solicitante_id=request.user.pk,
+            organizacion_id=ambito.organizacion_id,
+            crear_cliente=lambda: ClienteS3(ConfiguracionS3.desde_entorno()),
+        )
+        return ok({"mensaje": "El vaciado terminó.", "operacion_id": operacion})
+
+
+class OperacionVaciadoPapeleraView(ContratoAPIMixin, APIView):
+    def _servicio(self, request, operacion_id):
+        ambito = _ambito_mutacion(request)
+        from .lotes_papelera import ServicioLotesCarpeta
+        return ServicioLotesCarpeta(), ambito.organizacion_id
+
+    def get(self, request, operacion_id):
+        ambito = resolver_organizacion(request.user, _organizacion_id(request))
+        from .lotes_papelera import ServicioLotesCarpeta
+        estado = ServicioLotesCarpeta().estado_vaciado(
+            solicitante_id=request.user.pk, organizacion_id=ambito.organizacion_id,
+            operacion_id=operacion_id)
+        return ok(estado)
+
+    def post(self, request, operacion_id):
+        servicio, org = self._servicio(request, operacion_id)
+        operacion = servicio.vaciar(
+            solicitante_id=request.user.pk, organizacion_id=org,
+            operacion_id=operacion_id,
+            crear_cliente=lambda: ClienteS3(ConfiguracionS3.desde_entorno()),
+        )
+        return ok({"mensaje": "El vaciado terminó.", "operacion_id": operacion})
 
 
 class ResumenUnidadView(ContratoAPIMixin, APIView):

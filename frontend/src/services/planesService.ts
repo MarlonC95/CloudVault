@@ -56,8 +56,8 @@ export async function listarPlanes(): Promise<Pagina<Plan>> {
 }
 
 /** GET /mi-plan/ (contrato 10.2): el plan activo del usuario. */
-export async function obtenerMiPlan(): Promise<MiPlan> {
-  const respuesta = await clienteApi.get<RespuestaApi<MiPlanApi>>('/mi-plan/')
+export async function obtenerMiPlan(organizacionId: string): Promise<MiPlan> {
+  const respuesta = await clienteApi.get<RespuestaApi<MiPlanApi>>('/mi-plan/', { params: { organizacion_id: organizacionId } })
   const miPlan = respuesta.data.data
   return {
     plan: {
@@ -82,13 +82,13 @@ export async function obtenerMiPlan(): Promise<MiPlan> {
  * POST /mi-plan/suscribir/ (contrato 10.3).
  * Si el uso actual supera el límite del plan nuevo, lanza un ErrorApi con código CUOTA_EXCEDIDA.
  */
-export async function suscribirPlan(planId: string, tipoFacturacion: TipoFacturacion): Promise<void> {
-  await clienteApi.post('/mi-plan/suscribir/', { plan_id: planId, tipo_facturacion: tipoFacturacion })
+export async function suscribirPlan(planId: string, tipoFacturacion: TipoFacturacion, organizacionId: string): Promise<void> {
+  await clienteApi.post('/mi-plan/suscribir/', { plan_id: planId, tipo_facturacion: tipoFacturacion, organizacion_id: organizacionId })
 }
 
 /** GET /mi-plan/facturas/ (contrato 10.4) */
-export async function listarFacturas(): Promise<Pagina<Factura>> {
-  const respuesta = await clienteApi.get<RespuestaApi<PaginaApi<FacturaApi>>>('/mi-plan/facturas/')
+export async function listarFacturas(organizacionId: string): Promise<Pagina<Factura>> {
+  const respuesta = await clienteApi.get<RespuestaApi<PaginaApi<FacturaApi>>>('/mi-plan/facturas/', { params: { organizacion_id: organizacionId } })
   return mapearPagina(respuesta.data.data, (factura) => ({
     id: factura.id,
     monto: factura.monto,

@@ -1740,3 +1740,43 @@ Historial de facturación.
   - `ModalCompartir.tsx` → 6.1–6.6; `CompartidosPage.tsx` → 6.7–6.8; `EnlacePublicoPage.tsx` (`/s/:token`) → 6.9–6.12
   - `PlanesPage.tsx:265` → 10.3 (suscribir)
   - `DashboardLayout.tsx:51` → 3.11 / 10.2 (almacenamiento)
+
+## Apéndice C — Selección de organización en el panel
+
+`GET /api/v1/organizaciones/disponibles/` permite descubrir únicamente las
+membresías actuales del usuario autenticado. Acepta `page` (desde 1) y
+`page_size` (1–100, predeterminado 50); rechaza cuerpo, parámetros desconocidos
+o repetidos. Responde con `Cache-Control: no-store`:
+
+```json
+{"data":{"count":1,"next":null,"previous":null,"page_size":50,"results":[
+  {"id":"b0000000-0000-4000-8000-000000000001","nombre":"Equipo","nivel_rol":1}
+]}}
+```
+
+Una lista vacía no crea organizaciones. El resultado no clasifica espacios
+personales, no concede privilegios globales y no sustituye `/usuarios/contexto/`
+ni los endpoints de administración propuestos. Los niveles existentes son
+0 propietario, 1 lector, 2 operativo y 3 avanzado; cada operación conserva sus
+controles del servidor. La lista de archivos incluye los archivos activos de la
+organización, aunque su propietario sea otro miembro.
+
+El panel exige elegir cuando hay varias organizaciones y solo selecciona
+automáticamente una membresía única. Envía `organizacion_id` en la consulta de
+archivos, carpetas, papelera, resumen, perfil y consulta del plan. La contratación
+lo envía en el cuerpo. Los endpoints que autorizan por ID, como descarga y
+confirmación, obtienen el ámbito del recurso o de la reserva persistida; descarga
+conserva su contrato sin parámetros de consulta.
+
+El inicio de carga admite un `organizacion_id` UUID opcional en el cuerpo.
+Con ámbito explícito se valida la membresía vigente, el permiso de escritura y
+que la carpeta pertenezca a esa organización. Se revalida bajo bloqueo y durante
+la confirmación usando la organización guardada en la reserva. El proveedor
+`storage.servicios.ProveedorStorage` implementa la capacidad opcional
+`resolver_destino_organizacion`; los proveedores anteriores solo se aceptan si
+su resolución inequívoca devuelve exactamente el mismo destino.
+
+El cambio de organización reinicia el estado del panel; una mutación o carga
+en curso mantiene su organización de origen y bloquea el selector hasta terminar.
+La visibilidad y los permisos internos de organización se distinguen de los
+enlaces externos de compartición, cuyo flujo es independiente.

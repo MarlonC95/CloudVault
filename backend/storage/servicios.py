@@ -16,7 +16,8 @@ from compartir.acceso import acceso_usuario
 from compartir.models import ESCRITURA
 from subscriptions.cuotas import CONSULTA_CUOTA, SinSuscripcionVigente, leer_cuota_organizacion
 
-from .models import Archivo
+from .models import Archivo, Carpeta
+from subscriptions.models import MiembroOrganizacion
 
 
 def leer_cuota_desplegada(organizacion_id, using="default"):
@@ -66,6 +67,19 @@ class ProveedorStorage:
             raise PermissionDenied()
         return DestinoAutorizado(solicitante_id, acceso.organizacion_id, carpeta_id)
 
+    def resolver_destino_organizacion(self, *, solicitante_id, carpeta_id, organizacion_id):
+        """Ámbito explícito, con membresía y carpeta revalidadas en cada llamada."""
+        nivel = MiembroOrganizacion.objects.using(self.using).filter(
+            usuario_id=solicitante_id, organizacion_id=organizacion_id,
+        ).values_list("nivel_rol", flat=True).first()
+        if type(nivel) is not int or nivel not in NIVELES_ESCRITURA:
+            raise PermissionDenied()
+        if carpeta_id is not None and not Carpeta.objects.using(self.using).filter(
+            pk=carpeta_id, organizacion_id=organizacion_id, en_papelera=False,
+        ).exists():
+            raise ErrorCarga(CodigoError.NO_ENCONTRADO)
+        return DestinoAutorizado(solicitante_id, organizacion_id, carpeta_id)
+
     def leer_cuota(self, *, organizacion_id):
         try:
             limite, usado, fin = leer_cuota_desplegada(organizacion_id, using=self.using)
@@ -76,6 +90,11 @@ class ProveedorStorage:
     def registrar_archivo(self, *, archivo):
         if not connections[self.using].in_atomic_block:
             raise RuntimeError("La publicación requiere una transacción")
+        from .repositorio_papelera import nombre_disponible
+        from almacenamiento.errores import ConflictoNombreCarga
+        if not nombre_disponible(archivo.organizacion_id, archivo.carpeta_id,
+                                 archivo.nombre, using=self.using):
+            raise ConflictoNombreCarga()
         Archivo.objects.using(self.using).create(
             id=archivo.archivo_id, organizacion_id=archivo.organizacion_id,
             carpeta_id=archivo.carpeta_id, propietario_id=archivo.solicitante_id,
@@ -89,10 +108,12 @@ class ProveedorStorage:
             cursor.execute("""SELECT a.id, a.organizacion_id, a.carpeta_id, a.nombre,
                     a.clave_s3, a.tamano_bytes, a.tipo_mime,
                     (SELECT s.checksum_sha256 FROM sesiones_carga s
-                     WHERE s.archivo_id = a.id ORDER BY s.creado_en DESC LIMIT 1),
-                    EXISTS(SELECT 1 FROM miembros_organizacion m WHERE m.organizacion_id = a.organizacion_id
-                           AND m.usuario_id = %s AND m.nivel_rol IN (0,2,3))
-                FROM archivos a WHERE a.id = %s AND NOT a.en_papelera""", [solicitante_id, archivo_id])
+                     WHERE s.archivo_id = a.id ORDER BY s.creado_en DESC LIMIT 1)
+                FROM archivos a JOIN miembros_organizacion m ON m.organizacion_id = a.organizacion_id
+                WHERE a.id = %s AND m.usuario_id = %s AND m.nivel_rol IN (0,2,3)
+                    AND NOT a.en_papelera""" + (
+                        " FOR SHARE OF a, m" if connections[self.using].in_atomic_block else ""),
+                [archivo_id, solicitante_id])
             fila = cursor.fetchone()
         if fila is None:
             raise ErrorCarga(CodigoError.NO_ENCONTRADO)

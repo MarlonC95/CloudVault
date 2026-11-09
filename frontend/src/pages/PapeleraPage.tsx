@@ -70,32 +70,51 @@ function Casilla({ marcada, color, onCambiar, etiqueta }: CasillaProps) {
 
 function PapeleraPage() {
   const navegar = useNavigate()
-  const { papelera, carpetas, cargando, error, refrescar, restaurarArchivos, eliminarDefinitivamente } = useArchivos()
+  const {
+    papelera, papeleraCompleta, carpetas, carpetasEnPapelera, puedeVaciarPapelera, cargando, error, errorPapelera, refrescar,
+    restaurarArchivos, eliminarDefinitivamente, restaurarCarpetaPapelera,
+    eliminarCarpetaPapelera, vaciarPapelera, reanudarVaciadoPapelera,
+    consultarVaciadoPapelera,
+  } = useArchivos()
 
   const [idsSeleccionados, setIdsSeleccionados] = useState<string[]>([])
   const [idsPorEliminar, setIdsPorEliminar] = useState<string[] | null>(null)
   const [idFilaResaltada, setIdFilaResaltada] = useState<string | null>(null)
   const [errorAccion, setErrorAccion] = useState<string | null>(null)
   const [procesando, setProcesando] = useState(false)
+  const [confirmarVaciado, setConfirmarVaciado] = useState(false)
+  const [operacionVaciadoPendiente, setOperacionVaciadoPendiente] = useState<string | null>(null)
+  const [carpetaPorEliminar, setCarpetaPorEliminar] = useState<string | null>(null)
+  const [resultadoVaciado, setResultadoVaciado] = useState<{
+    completados: number; pendientes: number; total: number
+  } | null>(null)
 
   const archivosEnPapelera = papelera
   const seleccionados = idsSeleccionados.filter((id) => archivosEnPapelera.some((archivo) => archivo.id === id))
   const estanTodosSeleccionados = archivosEnPapelera.length > 0 && seleccionados.length === archivosEnPapelera.length
-  const papeleraVacia = archivosEnPapelera.length === 0
+  const papeleraVacia = archivosEnPapelera.length === 0 && carpetasEnPapelera.length === 0
 
-  const diasHastaPrimerVencimiento = papeleraVacia
+  const diasRestantesConocidos = [
+    ...archivosEnPapelera.map((archivo) => archivo.expiraEn === null ? null : archivo.diasRestantes),
+    ...carpetasEnPapelera.map((carpeta) => carpeta.expiraEn === null ? null : carpeta.diasRestantes),
+  ].filter((dias): dias is number => dias !== null)
+  const diasHastaPrimerVencimiento = diasRestantesConocidos.length === 0
     ? null
-    : Math.min(...archivosEnPapelera.map((archivo) => archivo.diasRestantes))
+    : Math.min(...diasRestantesConocidos)
 
   const tarjetasResumen = [
     {
-      etiqueta: 'Archivos en papelera',
-      valor: String(archivosEnPapelera.length),
+      etiqueta: 'Elementos en papelera',
+      valor: String(archivosEnPapelera.length + carpetasEnPapelera.length),
       icono: <Trash2 size={17} color="#64748B" strokeWidth={1.8} />,
     },
     {
-      etiqueta: 'Espacio ocupado',
-      valor: calcularTamanoTotalLegible(archivosEnPapelera),
+      etiqueta: 'Almacenamiento físico retenido',
+      descripcion: 'No consume cuota del plan',
+      valor: calcularTamanoTotalLegible([
+        ...archivosEnPapelera,
+        ...carpetasEnPapelera.map((carpeta) => ({ tamano: `${carpeta.tamanoBytes / (1024 * 1024)} MB` })),
+      ]),
       icono: <HardDrive size={17} color="#64748B" strokeWidth={1.8} />,
     },
     {
@@ -140,15 +159,52 @@ function PapeleraPage() {
     finally { setProcesando(false) }
   }
 
+  async function ejecutarVaciado(operacionId?: string) {
+    setProcesando(true)
+    setErrorAccion(null)
+    try {
+      await (operacionId ? reanudarVaciadoPapelera(operacionId) : vaciarPapelera())
+      setOperacionVaciadoPendiente(null)
+      setResultadoVaciado(null)
+      setConfirmarVaciado(false)
+    } catch (causa) {
+      const errorApi = convertirEnErrorApi(causa)
+      setErrorAccion(errorApi.campos.limite?.[0] ?? errorApi.message)
+      const pendiente = errorApi.campos.operacion_id?.[0] ?? operacionId ?? null
+      setOperacionVaciadoPendiente(pendiente)
+      if (pendiente) {
+        try {
+          const estado = await consultarVaciadoPapelera(pendiente)
+          setResultadoVaciado({ completados: estado.completados, pendientes: estado.pendientes, total: estado.total })
+        } catch { setResultadoVaciado(null) }
+      }
+    } finally { setProcesando(false) }
+  }
+
+  async function actuarSobreCarpeta(carpetaId: string, accion: 'restaurar' | 'eliminar'): Promise<boolean> {
+    setProcesando(true)
+    setErrorAccion(null)
+    try {
+      if (accion === 'restaurar') await restaurarCarpetaPapelera(carpetaId)
+      else await eliminarCarpetaPapelera(carpetaId)
+      return true
+    } catch (causa) {
+      const errorApi = convertirEnErrorApi(causa)
+      setErrorAccion(errorApi.campos.limite?.[0] ?? errorApi.message)
+      return false
+    }
+    finally { setProcesando(false) }
+  }
+
   function obtenerNombreUbicacion(carpetaId: string | null): string {
-    return carpetas.find((carpeta) => carpeta.id === carpetaId)?.nombre ?? 'Mi Unidad'
+    return carpetas.find((carpeta) => carpeta.id === carpetaId)?.nombre ?? 'Ubicación no disponible'
   }
 
   return (
     <DashboardLayout seccionActiva="papelera">
       <div style={{ padding: 32 }}>
         {cargando && <div role="status" style={{ color: '#64748B', fontSize: 13 }}>Cargando papelera...</div>}
-        {(error || errorAccion) && <div role="alert" style={{ color: COLOR_PELIGRO, fontSize: 13 }}>{errorAccion || error} <button type="button" onClick={() => { setErrorAccion(null); void refrescar().catch(() => undefined) }}>Reintentar</button></div>}
+        {(errorPapelera || error || errorAccion) && <div role="alert" style={{ color: COLOR_PELIGRO, fontSize: 13 }}>{errorAccion || errorPapelera || error} <button type="button" onClick={() => { setErrorAccion(null); void refrescar().catch(() => undefined) }}>Reintentar</button></div>}
         {/* Encabezado */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
@@ -160,27 +216,64 @@ function PapeleraPage() {
 
           <button
             type="button"
-            disabled={papeleraVacia || procesando}
-            onClick={() => setIdsPorEliminar(archivosEnPapelera.map((archivo) => archivo.id))}
+            disabled={papeleraCompleta.length === 0 || procesando}
+            onClick={() => setIdsPorEliminar(papeleraCompleta.map((archivo) => archivo.id))}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 7,
               height: 38,
               padding: '0 16px',
-              background: papeleraVacia ? '#F8FAFC' : '#FEF2F2',
-              color: papeleraVacia ? '#CBD5E1' : COLOR_PELIGRO,
-              border: `1px solid ${papeleraVacia ? '#E2E8F0' : '#FCA5A5'}`,
+              background: papeleraCompleta.length === 0 ? '#F8FAFC' : '#FEF2F2',
+              color: papeleraCompleta.length === 0 ? '#CBD5E1' : COLOR_PELIGRO,
+              border: `1px solid ${papeleraCompleta.length === 0 ? '#E2E8F0' : '#FCA5A5'}`,
               borderRadius: 10,
-              cursor: papeleraVacia ? 'not-allowed' : 'pointer',
+              cursor: papeleraCompleta.length === 0 ? 'not-allowed' : 'pointer',
               fontSize: 13,
               fontWeight: 600,
             }}
           >
             <Trash2 size={14} strokeWidth={2} />
-            Vaciar papelera
+            Vaciar archivos
           </button>
+          {puedeVaciarPapelera && (
+            <button
+              type="button"
+              disabled={papeleraVacia || procesando}
+              onClick={() => setConfirmarVaciado(true)}
+              style={{ ...ESTILO_BOTON_BARRA, height: 38 }}
+            >
+              Vaciar papelera (operación agregada)
+            </button>
+          )}
         </div>
+
+        {confirmarVaciado && (
+          <div role="alertdialog" aria-label="Confirmar vaciado" style={{ padding: 16, marginBottom: 16, background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 12 }}>
+            <p style={{ margin: '0 0 10px', color: COLOR_PELIGRO, fontWeight: 700 }}>Esta acción eliminará permanentemente la selección actual de papelera.</p>
+            <p style={{ margin: '0 0 12px', color: '#64748B', fontSize: 12 }}>Se aceptan hasta 100 elementos por operación. Si algo queda pendiente, podrás reanudar la misma selección.</p>
+            <button type="button" disabled={procesando} onClick={() => { void ejecutarVaciado() }}>Confirmar vaciado</button>
+            <button type="button" disabled={procesando} onClick={() => setConfirmarVaciado(false)} style={{ marginLeft: 8 }}>Cancelar</button>
+          </div>
+        )}
+
+        {operacionVaciadoPendiente && (
+          <div role="status" style={{ marginBottom: 14, color: '#92400E', fontSize: 13 }}>
+            La operación {operacionVaciadoPendiente} conserva pendientes.
+            {resultadoVaciado && <span> {resultadoVaciado.completados} de {resultadoVaciado.total} completados; {resultadoVaciado.pendientes} pendientes.</span>}
+            <button type="button" disabled={procesando} onClick={() => { void ejecutarVaciado(operacionVaciadoPendiente) }} style={{ marginLeft: 8 }}>Reanudar vaciado</button>
+          </div>
+        )}
+
+        {carpetaPorEliminar && (
+          <div role="alertdialog" aria-label="Confirmar eliminación de carpeta" style={{ padding: 16, marginBottom: 16, background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 12 }}>
+            <p style={{ margin: '0 0 10px', color: COLOR_PELIGRO, fontWeight: 700 }}>Se eliminará permanentemente la carpeta y su contenido retenido.</p>
+            <button type="button" disabled={procesando} onClick={() => {
+              void actuarSobreCarpeta(carpetaPorEliminar, 'eliminar').then((ok) => { if (ok) setCarpetaPorEliminar(null) })
+            }}>Confirmar eliminación</button>
+            <button type="button" disabled={procesando} onClick={() => setCarpetaPorEliminar(null)} style={{ marginLeft: 8 }}>Cancelar</button>
+          </div>
+        )}
 
         {/* Aviso de retención */}
         <div
@@ -223,6 +316,9 @@ function PapeleraPage() {
                   {tarjeta.valor}
                 </p>
                 <p style={{ fontSize: 11, color: '#94A3B8', margin: '3px 0 0' }}>{tarjeta.etiqueta}</p>
+                {'descripcion' in tarjeta && tarjeta.descripcion && (
+                  <p style={{ fontSize: 10, color: '#94A3B8', margin: '2px 0 0' }}>{tarjeta.descripcion}</p>
+                )}
               </div>
             </div>
           ))}
@@ -324,6 +420,27 @@ function PapeleraPage() {
           </div>
         )}
 
+        {carpetasEnPapelera.length > 0 && (
+          <section aria-label="Carpetas en papelera" style={{ marginBottom: 16, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, overflow: 'hidden' }}>
+            <h2 style={{ margin: 0, padding: '14px 20px', fontSize: 14, color: COLOR_NAVY, background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+              Carpetas ({carpetasEnPapelera.length})
+            </h2>
+            {carpetasEnPapelera.map((carpeta) => (
+              <div key={carpeta.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: '1px solid #F1F5F9' }}>
+                <Folder size={17} color="#64748B" />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: COLOR_NAVY }}>{carpeta.nombre}</div>
+                  <div style={{ fontSize: 11, color: '#64748B' }}>
+                    {carpeta.cantidadElementos} elementos · eliminada {formatearFechaEliminacion(carpeta.eliminadoEn)} · {carpeta.expiraEn === null ? 'retención no disponible' : `${carpeta.diasRestantes} días restantes`}
+                  </div>
+                </div>
+                <button type="button" disabled={procesando} onClick={() => { void actuarSobreCarpeta(carpeta.id, 'restaurar') }}>Restaurar carpeta</button>
+                {carpeta.puedePurgar && <button type="button" disabled={procesando} onClick={() => setCarpetaPorEliminar(carpeta.id)}>Eliminar definitivamente</button>}
+              </div>
+            ))}
+          </section>
+        )}
+
         {/* Tabla o estado vacío */}
         {papeleraVacia ? (
           <div
@@ -354,7 +471,7 @@ function PapeleraPage() {
               Los archivos eliminados aparecerán aquí antes de ser borrados permanentemente
             </p>
           </div>
-        ) : (
+        ) : archivosEnPapelera.length === 0 ? null : (
           <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 14, overflow: 'hidden' }}>
             <div
               style={{
@@ -387,7 +504,10 @@ function PapeleraPage() {
             {archivosEnPapelera.map((archivo, indice) => {
               const estaSeleccionado = seleccionados.includes(archivo.id)
               const diasRestantes = archivo.diasRestantes
-              const coloresDias = obtenerColoresDiasRestantes(diasRestantes)
+              const retencionDisponible = archivo.expiraEn !== null
+              const coloresDias = !retencionDisponible
+                ? { texto: '#64748B', fondo: '#F1F5F9', borde: '#E2E8F0' }
+                : obtenerColoresDiasRestantes(diasRestantes)
               const configuracion = obtenerConfiguracionTipoArchivo(archivo.tipo)
               const Icono = configuracion.Icono
               const esUltimaFila = indice === archivosEnPapelera.length - 1
@@ -460,7 +580,9 @@ function PapeleraPage() {
                       }}
                     >
                       <Clock size={11} strokeWidth={2.2} />
-                      {diasRestantes} {pluralizar(diasRestantes, 'día restante', 'días restantes')}
+                      {!retencionDisponible
+                        ? 'Retención no disponible'
+                        : `${diasRestantes} ${pluralizar(diasRestantes, 'día restante', 'días restantes')}`}
                     </span>
                   </div>
 

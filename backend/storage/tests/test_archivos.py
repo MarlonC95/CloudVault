@@ -2,7 +2,7 @@ import uuid
 
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from storage.tests.transaccionales import StorageTransactionTestCase
 
 from auth_workspaces.models import Usuario
 from common.testing import cliente_autenticado, espacio_de_trabajo
@@ -10,7 +10,7 @@ from common.testing import cliente_autenticado, espacio_de_trabajo
 from storage.models import Archivo, Carpeta
 
 
-class ArchivosAPITests(APITestCase):
+class ArchivosAPITests(StorageTransactionTestCase):
     def setUp(self):
         self.usuario_id, self.organizacion_id = espacio_de_trabajo(nivel_rol=0)
         self.otro_usuario_id, self.otra_organizacion_id = espacio_de_trabajo(nivel_rol=0)

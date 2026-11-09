@@ -60,8 +60,8 @@ function mapearPreferencias(preferencias: PreferenciasApi): PreferenciasUsuario 
 }
 
 /** GET /auth/perfil/ (contrato 2.1) */
-export async function obtenerPerfil(): Promise<PerfilUsuario> {
-  const respuesta = await clienteApi.get<RespuestaApi<PerfilApi>>('/auth/perfil/')
+export async function obtenerPerfil(organizacionId: string): Promise<PerfilUsuario> {
+  const respuesta = await clienteApi.get<RespuestaApi<PerfilApi>>('/auth/perfil/', { params: { organizacion_id: organizacionId } })
   return mapearPerfil(respuesta.data.data)
 }
 

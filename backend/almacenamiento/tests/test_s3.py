@@ -165,6 +165,152 @@ class ClienteTests(SimpleTestCase):
             self.cliente.borrar_tecnico(self.temporal)
             self.cliente.borrar_tecnico(self.temporal)
 
+    def test_borrado_fisico_elimina_versiones_de_clave_exacta_y_verifica(self):
+        clave = nueva_clave_final(uuid4())
+        with patch.object(self.cliente, "_operar", side_effect=[
+            {},
+            {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+            {"ContentLength": 9},
+            {},
+            {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+            ErrorS3("ausente"),
+        ]) as operar:
+            self.cliente.borrar_fisico_verificado(clave)
+        self.assertEqual(operar.call_args_list[0].args, ("get_bucket_versioning",))
+        self.assertEqual(operar.call_args_list[1].kwargs, {"Prefix": clave, "MaxKeys": 1000})
+        self.assertEqual(operar.call_args_list[2].args[0], "head_object")
+        self.assertEqual(operar.call_args_list[3].kwargs, {"Key": clave})
+        self.assertEqual(operar.call_args_list[4].kwargs, {"Prefix": clave, "MaxKeys": 1000})
+        self.assertEqual(operar.call_args_list[5].kwargs, {"Key": clave})
+
+    def test_borrado_fisico_acepta_solo_version_null_actual_no_versionada(self):
+        clave = nueva_clave_final(uuid4())
+        with patch.object(self.cliente, "_operar", side_effect=[
+            {},
+            {"Versions": [{"Key": clave, "VersionId": "null", "IsLatest": True}],
+             "DeleteMarkers": [], "IsTruncated": False},
+            {"ContentLength": 9},
+            {},
+            {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+            ErrorS3("ausente"),
+        ]) as operar:
+            self.cliente.borrar_fisico_verificado(clave)
+        self.assertEqual(operar.call_args_list[3].args[0], "delete_object")
+        self.assertNotIn("VersionId", operar.call_args_list[3].kwargs)
+
+    def test_borrado_fisico_versionado_o_historial_no_elimina_por_clave(self):
+        clave = nueva_clave_final(uuid4())
+        for config, versionado in (({"Status": "Enabled"}, True),
+                                   ({"Status": "Suspended"}, True), ({}, False)):
+            with self.subTest(config=config):
+                respuestas = [config]
+                if not versionado:
+                    respuestas.append({"Versions": [{"Key": clave, "VersionId": "v1"}],
+                                       "DeleteMarkers": [], "IsTruncated": False})
+                with patch.object(self.cliente, "_operar", side_effect=respuestas) as operar:
+                    with self.assertRaises(ErrorS3):
+                        self.cliente.borrar_fisico_verificado(clave)
+                self.assertFalse(any(call.args[0] == "delete_object" for call in operar.call_args_list))
+
+    def test_borrado_fisico_reporta_bucket_versionado_como_incompatible(self):
+        clave = nueva_clave_final(uuid4())
+        with patch.object(self.cliente, "_operar", return_value={"Status": "Enabled"}):
+            with self.assertRaises(ErrorS3) as error:
+                self.cliente.borrar_fisico_verificado(clave)
+        self.assertEqual(error.exception.tipo, "incompatible")
+
+    def test_borrado_fisico_sin_permiso_para_consultar_versionado_no_hace_delete(self):
+        clave = nueva_clave_final(uuid4())
+        with patch.object(self.cliente, "_operar", side_effect=ErrorS3("acceso")) as operar:
+            with self.assertRaises(ErrorS3):
+                self.cliente.borrar_fisico_verificado(clave)
+        operar.assert_called_once_with("get_bucket_versioning")
+
+    def test_borrado_fisico_no_confunde_ausencia_no_demostrada_con_exito(self):
+        clave = nueva_clave_final(uuid4())
+        escenarios = (
+            ([{}, {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+              {"ContentLength": 5}, ErrorS3("acceso")], "fallo_delete"),
+            ([{}, {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+              {"ContentLength": 5}, {},
+              {"Versions": [{"Key": clave, "VersionId": "null", "IsLatest": True}],
+                   "DeleteMarkers": [], "IsTruncated": False}], "sigue_presente"),
+            ([{}, {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+              {"ContentLength": 5}, {},
+              {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+              ErrorS3("acceso")], "head_denegado"),
+            ([{}, {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+              {"ContentLength": 5}, {},
+              {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+              ErrorS3("servicio")], "head_timeout"),
+        )
+        for respuestas, nombre in escenarios:
+            with self.subTest(escenario=nombre), patch.object(
+                    self.cliente, "_operar", side_effect=respuestas):
+                with self.assertRaises(ErrorS3):
+                    self.cliente.borrar_fisico_verificado(clave)
+
+    def test_borrado_fisico_ausente_se_puede_recuperar_sin_crear_markers(self):
+        clave = nueva_clave_final(uuid4())
+        with patch.object(self.cliente, "_operar", side_effect=[
+            {},
+            {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+            ErrorS3("ausente"),
+            {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+            ErrorS3("ausente"),
+        ]) as operar:
+            self.cliente.borrar_fisico_verificado(clave)
+        self.assertEqual(operar.call_args_list[2].args[0], "head_object")
+        self.assertEqual(operar.call_args_list[2].kwargs, {"Key": clave})
+
+    def test_borrado_fisico_pagina_historial_acotada_y_ausencia_final(self):
+        clave = nueva_clave_final(uuid4())
+        with patch.object(self.cliente, "_operar", side_effect=[
+            {},
+            {"Versions": [], "DeleteMarkers": [], "IsTruncated": True,
+             "NextKeyMarker": clave + "-otro", "NextVersionIdMarker": "v1"},
+            {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+            ErrorS3("ausente"),
+            {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+            ErrorS3("ausente"),
+        ]) as operar:
+            self.cliente.borrar_fisico_verificado(clave)
+        self.assertEqual(operar.call_args_list[2].kwargs, {
+            "Prefix": clave, "MaxKeys": 1000, "KeyMarker": clave + "-otro",
+            "VersionIdMarker": "v1",
+        })
+
+    def test_borrado_fisico_listados_s3_inciertos_no_llegan_a_delete(self):
+        clave = nueva_clave_final(uuid4())
+        escenarios = (
+            ([{}, ErrorS3("acceso")], "listado_inicial"),
+            ([{}, {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+              {"ContentLength": 5}, {}, ErrorS3("servicio")], "listado_final"),
+        )
+        for respuestas, nombre in escenarios:
+            with self.subTest(escenario=nombre), patch.object(
+                    self.cliente, "_operar", side_effect=respuestas) as operar:
+                with self.assertRaises(ErrorS3):
+                    self.cliente.borrar_fisico_verificado(clave)
+                if nombre == "listado_inicial":
+                    self.assertFalse(any(c.args[0] == "delete_object" for c in operar.call_args_list))
+                else:
+                    self.assertIn("delete_object", [c.args[0] for c in operar.call_args_list])
+
+    def test_borrado_fisico_head_presente_no_se_cierra(self):
+        clave = nueva_clave_final(uuid4())
+        with patch.object(self.cliente, "_operar", side_effect=[
+            {},
+            {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+            {"ContentLength": 5},
+            {},
+            {"Versions": [], "DeleteMarkers": [], "IsTruncated": False},
+            {"ContentLength": 5},
+        ]) as operar:
+            with self.assertRaises(ErrorS3):
+                self.cliente.borrar_fisico_verificado(clave)
+        self.assertEqual(operar.call_args_list[-1].args[0], "head_object")
+
     def test_hash_real_y_cierre_stream(self):
         contenido = b"bytes reales del archivo"
         stream = StreamingBody(BytesIO(contenido), len(contenido))

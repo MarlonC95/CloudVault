@@ -2,6 +2,7 @@ import axios from 'axios'
 
 /** Códigos de error del catálogo del contrato (sección 0.4) más SIN_CONEXION, que solo existe en el frontend. */
 export type CodigoErrorApi =
+  | 'RESOURCE_BUSY'
   | 'VALIDATION_ERROR'
   | 'INVALID_CREDENTIALS'
   | 'RECOVERY_VERIFICATION_FAILED'
@@ -26,6 +27,7 @@ interface CuerpoErrorApi {
 }
 
 const MENSAJES_POR_CODIGO: Record<CodigoErrorApi, string> = {
+  RESOURCE_BUSY: 'El recurso está siendo procesado. Intenta de nuevo más tarde.',
   VALIDATION_ERROR: 'Revisa los datos enviados.',
   INVALID_CREDENTIALS: 'Correo o contraseña incorrectos.',
   RECOVERY_VERIFICATION_FAILED: 'No fue posible verificar los datos proporcionados.',

@@ -103,69 +103,73 @@ class SuscribirView(ContratoAPIMixin, APIView):
         if not ambito.es_admin:
             raise PermissionDenied()
 
-        fields = {}
-        plan_id = services.plan_id_desde_codigo(request.data.get("plan_id"))
-        plan = Plan.objects.filter(id=plan_id, esta_activo=True).first() if plan_id else None
-        if plan is None:
-            fields["plan_id"] = ["El plan indicado no existe."]
+        from almacenamiento.persistencia import RepositorioCargas
+        repo = RepositorioCargas()
+        with repo.unidad_de_trabajo(organizacion_id=ambito.organizacion_id):
+            fields = {}
+            plan_id = services.plan_id_desde_codigo(request.data.get("plan_id"))
+            plan = Plan.objects.filter(id=plan_id, esta_activo=True).first() if plan_id else None
+            if plan is None:
+                fields["plan_id"] = ["El plan indicado no existe."]
 
-        intervalo = services.intervalo_desde_cliente(request.data.get("tipo_facturacion"))
-        if intervalo is None:
-            fields["tipo_facturacion"] = [
-                "El tipo de facturación debe ser 'mensual' o 'anual'."
-            ]
-        if fields:
-            return fail("VALIDATION_ERROR", fields)
+            intervalo = services.intervalo_desde_cliente(request.data.get("tipo_facturacion"))
+            if intervalo is None:
+                fields["tipo_facturacion"] = [
+                    "El tipo de facturación debe ser 'mensual' o 'anual'."
+                ]
+            if fields:
+                return fail("VALIDATION_ERROR", fields)
 
-        usado = (
-            Organizacion.objects.filter(id=ambito.organizacion_id)
-            .values_list("almacenamiento_usado_bytes", flat=True)
-            .first()
-        ) or 0
-        if usado > plan.limite_almacenamiento_bytes:
-            return fail(
-                "CUOTA_EXCEDIDA",
-                {"plan_id": ["Tu uso actual supera la cuota del nuevo plan."]},
-                status=409,
+            usado = (
+                Organizacion.objects.filter(id=ambito.organizacion_id)
+                .values_list("almacenamiento_usado_bytes", flat=True)
+                .first()
+            ) or 0
+            reservado = repo.bytes_pendientes(organizacion_id=ambito.organizacion_id)
+            if usado + reservado > plan.limite_almacenamiento_bytes:
+                return fail(
+                    "CUOTA_EXCEDIDA",
+                    {"plan_id": ["Tu uso actual supera la cuota del nuevo plan."]},
+                    status=409,
+                )
+
+            ahora = timezone.now()
+            meses = 12 if intervalo == Suscripcion.INTERVALO_ANUAL else 1
+            suscripcion = (
+                Suscripcion.objects.filter(
+                    organizacion_id=ambito.organizacion_id, estado=Suscripcion.ESTADO_ACTIVE
+                )
+                .order_by("-periodo_inicio")
+                .first()
+            )
+            if suscripcion is None:
+                suscripcion = Suscripcion(organizacion_id=ambito.organizacion_id)
+            suscripcion.plan = plan
+            suscripcion.estado = Suscripcion.ESTADO_ACTIVE
+            suscripcion.intervalo = intervalo
+            suscripcion.periodo_inicio = ahora
+            suscripcion.periodo_fin = services.sumar_meses(ahora, meses)
+            suscripcion.auto_renovar = True
+            suscripcion.save()
+
+            monto = services.precio_anual(plan.precio) if intervalo == Suscripcion.INTERVALO_ANUAL else plan.precio
+            HistorialPago.objects.create(
+                suscripcion=suscripcion,
+                monto=monto,
+                estado="COMPLETED",
+                referencia_transaccion=f"sim-{services.token_aleatorio()}",
+                fecha_pago=ahora,
             )
 
-        ahora = timezone.now()
-        meses = 12 if intervalo == Suscripcion.INTERVALO_ANUAL else 1
-        suscripcion = (
-            Suscripcion.objects.filter(
-                organizacion_id=ambito.organizacion_id, estado=Suscripcion.ESTADO_ACTIVE
-            )
-            .order_by("-periodo_inicio")
-            .first()
-        )
-        if suscripcion is None:
-            suscripcion = Suscripcion(organizacion_id=ambito.organizacion_id)
-        suscripcion.plan = plan
-        suscripcion.estado = Suscripcion.ESTADO_ACTIVE
-        suscripcion.intervalo = intervalo
-        suscripcion.periodo_inicio = ahora
-        suscripcion.periodo_fin = services.sumar_meses(ahora, meses)
-        suscripcion.auto_renovar = True
-        suscripcion.save()
-
-        monto = services.precio_anual(plan.precio) if intervalo == Suscripcion.INTERVALO_ANUAL else plan.precio
-        HistorialPago.objects.create(
-            suscripcion=suscripcion,
-            monto=monto,
-            estado="COMPLETED",
-            referencia_transaccion=f"sim-{services.token_aleatorio()}",
-            fecha_pago=ahora,
-        )
-
-        return ok({
-            "plan": {
-                "id": services.id_publico(plan.id),
-                "nombre": services.nombre_mostrado(plan.nombre),
-                "tipo_facturacion": services.intervalo_a_cliente(suscripcion.intervalo),
-            },
-            "estado": suscripcion.estado,
-            "renueva_en": services.fecha_iso(suscripcion.periodo_fin),
-        })
+            return ok({
+                "plan": {
+                    "id": services.id_publico(plan.id),
+                    "nombre": services.nombre_mostrado(plan.nombre),
+                    "tipo_facturacion": services.intervalo_a_cliente(suscripcion.intervalo),
+                },
+                "estado": suscripcion.estado,
+                "renueva_en": services.fecha_iso(suscripcion.periodo_fin),
+            })
 
 
 class FacturasView(ContratoAPIMixin, APIView):

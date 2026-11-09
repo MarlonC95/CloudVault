@@ -47,6 +47,7 @@ export interface FiltrosArchivos {
   fecha?: RangoFecha
   tamano?: RangoTamano
   pagina?: number
+  organizacionId: string
 }
 
 function mapearArchivo(archivo: ArchivoApi): Archivo {
@@ -67,7 +68,7 @@ function mapearArchivo(archivo: ArchivoApi): Archivo {
 }
 
 function construirParametrosListado(filtros: FiltrosArchivos): Record<string, string | number> {
-  const parametros: Record<string, string | number> = {}
+  const parametros: Record<string, string | number> = { organizacion_id: filtros.organizacionId }
 
   if (filtros.carpetaId !== undefined) parametros.carpeta = filtros.carpetaId ?? 'null'
   if (filtros.busqueda?.trim()) parametros.busqueda = filtros.busqueda.trim()
@@ -81,7 +82,7 @@ function construirParametrosListado(filtros: FiltrosArchivos): Record<string, st
 }
 
 /** GET /archivos/ (contrato 3.6): lista con búsqueda y filtros. */
-export async function listarArchivos(filtros: FiltrosArchivos = {}): Promise<Pagina<Archivo>> {
+export async function listarArchivos(filtros: FiltrosArchivos): Promise<Pagina<Archivo>> {
   const respuesta = await clienteApi.get<RespuestaApi<PaginaApi<ArchivoApi>>>('/archivos/', {
     params: construirParametrosListado(filtros),
   })
@@ -89,24 +90,25 @@ export async function listarArchivos(filtros: FiltrosArchivos = {}): Promise<Pag
 }
 
 /** PATCH /archivos/{id}/ (contrato 3.7): renombra conservando la metadata. */
-export async function renombrarArchivo(archivoId: string, nuevoNombre: string): Promise<void> {
-  await clienteApi.patch(`/archivos/${archivoId}/`, { nombre: nuevoNombre.trim() })
+export async function renombrarArchivo(archivoId: string, nuevoNombre: string, organizacionId: string): Promise<void> {
+  await clienteApi.patch(`/archivos/${archivoId}/`, { nombre: nuevoNombre.trim() }, { params: { organizacion_id: organizacionId } })
 }
 
 /** DELETE /archivos/{id}/ (contrato 3.8): lo manda a la papelera (retención de 30 días). */
-export async function enviarArchivoAPapelera(archivoId: string): Promise<string> {
-  const respuesta = await clienteApi.delete<RespuestaApi<RespuestaMensajeApi>>(`/archivos/${archivoId}/`)
+export async function enviarArchivoAPapelera(archivoId: string, organizacionId: string): Promise<string> {
+  const respuesta = await clienteApi.delete<RespuestaApi<RespuestaMensajeApi>>(`/archivos/${archivoId}/`, { params: { organizacion_id: organizacionId } })
   return respuesta.data.data.mensaje
 }
 
 /** POST /archivos/{id}/mover/ (contrato 3.9): `null` lo regresa a la raíz. */
-export async function moverArchivo(archivoId: string, carpetaId: string | null): Promise<void> {
-  await clienteApi.post(`/archivos/${archivoId}/mover/`, { carpeta_id: carpetaId })
+export async function moverArchivo(archivoId: string, carpetaId: string | null, organizacionId: string): Promise<void> {
+  await clienteApi.post(`/archivos/${archivoId}/mover/`, { carpeta_id: carpetaId }, { params: { organizacion_id: organizacionId } })
 }
 
 /** Paso 1 de la carga directa — POST /archivos/iniciar-carga/ (contrato 4.1). */
-export async function iniciarCarga(archivo: File, carpetaId: string | null): Promise<CargaIniciada> {
+export async function iniciarCarga(archivo: File, carpetaId: string | null, organizacionId: string): Promise<CargaIniciada> {
   const respuesta = await clienteApi.post<RespuestaApi<CargaIniciadaApi>>('/archivos/iniciar-carga/', {
+    organizacion_id: organizacionId,
     nombre: archivo.name,
     tamano_bytes: archivo.size,
     tipo_mime: archivo.type || 'application/octet-stream',
@@ -135,9 +137,10 @@ export async function confirmarCarga(archivoId: string, etag?: string): Promise<
 export async function subirArchivo(
   archivo: File,
   carpetaId: string | null,
+  organizacionId: string,
   alProgresar?: (porcentaje: number) => void,
 ): Promise<string> {
-  const carga = await iniciarCarga(archivo, carpetaId)
+  const carga = await iniciarCarga(archivo, carpetaId, organizacionId)
 
   let etag: string | undefined
   try {

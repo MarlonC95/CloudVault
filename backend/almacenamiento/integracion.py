@@ -13,6 +13,27 @@ class DestinoAutorizado:
     carpeta_id: UUID | None
 
 
+def resolver_destino_en_organizacion(servicios, *, solicitante_id, carpeta_id, organizacion_id):
+    """Capacidad opcional; proveedores antiguos conservan su resolución inequívoca.
+
+    Nunca se acepta un destino de otra organización como fallback.
+    """
+    from .contrato import CodigoError
+    from .errores import ErrorCarga
+
+    resolver = getattr(servicios, "resolver_destino_organizacion", None)
+    if callable(resolver):
+        destino = resolver(solicitante_id=solicitante_id, carpeta_id=carpeta_id,
+                           organizacion_id=organizacion_id)
+    else:
+        destino = servicios.resolver_destino(solicitante_id=solicitante_id, carpeta_id=carpeta_id)
+    if (not isinstance(destino, DestinoAutorizado)
+            or destino.solicitante_id != solicitante_id or destino.carpeta_id != carpeta_id
+            or destino.organizacion_id != organizacion_id):
+        raise ErrorCarga(CodigoError.SIN_PERMISO)
+    return destino
+
+
 @dataclass(frozen=True)
 class CuotaVigente:
     organizacion_id: UUID

@@ -61,8 +61,10 @@ class ServicioConfirmacionCargas:
                     yield actual
 
     def _destino(self, servicios, sesion):
-        destino = servicios.resolver_destino(solicitante_id=sesion.solicitante_id,
-                                             carpeta_id=sesion.carpeta_id)
+        from .integracion import resolver_destino_en_organizacion
+        destino = resolver_destino_en_organizacion(
+            servicios, solicitante_id=sesion.solicitante_id, carpeta_id=sesion.carpeta_id,
+            organizacion_id=sesion.organizacion_id)
         if destino.organizacion_id != sesion.organizacion_id:
             raise ErrorCarga(CodigoError.SIN_PERMISO)
 

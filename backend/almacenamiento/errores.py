@@ -31,6 +31,13 @@ class ErrorCarga(APIException):
         super().__init__(detail="La operación de carga no pudo completarse.")
 
 
+class ConflictoNombreCarga(ErrorCarga):
+    """Conflicto de publicación con un nombre reservado por otro recurso."""
+    def __init__(self):
+        super().__init__(CodigoError.VALIDATION_ERROR,
+                         fields={'nombre': ['Ya existe un recurso con ese nombre.']})
+
+
 def _campos_validacion(detail):
     if not isinstance(detail, dict):
         detail = {"non_field_errors": detail}
@@ -79,6 +86,6 @@ def error_de_almacenamiento(exc, context=None):
     set_rollback()
     return Response(
         {"error": {"code": codigo.value, "fields": fields}},
-        status=ESTADOS_HTTP_ERROR[codigo],
+        status=409 if isinstance(exc, ConflictoNombreCarga) else ESTADOS_HTTP_ERROR[codigo],
         headers=headers,
     )

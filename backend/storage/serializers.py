@@ -73,4 +73,10 @@ class PapeleraSerializer(ArchivoSerializer):
 
     def get_dias_restantes(self, obj):
         expira = self.get_expira_en(obj)
-        return max(0, ceil((expira - timezone.now()).total_seconds() / 86400)) if expira else 0
+        if not expira:
+            return 0
+        ahora = self.context.get("ahora_papelera")
+        if ahora is None:
+            ahora = timezone.now()
+            self.context["ahora_papelera"] = ahora
+        return max(0, ceil((expira - ahora).total_seconds() / 86400))

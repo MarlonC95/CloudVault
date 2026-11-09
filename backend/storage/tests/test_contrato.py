@@ -3,14 +3,14 @@ from uuid import uuid4
 
 from django.urls import reverse
 from django.utils import timezone
-from rest_framework.test import APITestCase
+from storage.tests.transaccionales import StorageTransactionTestCase
 
 from common.testing import cliente_autenticado, espacio_de_trabajo
 from storage.models import Archivo, Carpeta
 from storage.servicios import crear_servicios
 
 
-class ContratoStorageTests(APITestCase):
+class ContratoStorageTests(StorageTransactionTestCase):
     def setUp(self):
         self.usuario_id, self.organizacion_id = espacio_de_trabajo()
         self.client = cliente_autenticado(self.usuario_id)

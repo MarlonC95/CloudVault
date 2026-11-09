@@ -71,3 +71,11 @@ cors-restaurable.json
 *.tmp
 *.orig
 *.rej
+
+# Plan local de la papelera: nunca incluir su contenido en commits.
+/plan-papelera/
+
+# Configuración personal multiagente de Codex: conservar solo localmente.
+/.codex/
+/AGENTS.md
+/FLUJO_MULTIAGENTE.md

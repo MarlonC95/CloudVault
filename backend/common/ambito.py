@@ -84,7 +84,9 @@ def resolver_organizacion(usuario, organizacion_id=None, escritura=False, using=
         )
     else:
         elegida = membresias[0]
-    ambito = Ambito(organizacion_id=elegida[0], nivel_rol=int(elegida[1]))
+    if type(elegida[1]) is not int or elegida[1] not in (0, 1, 2, 3):
+        raise PermissionDenied()
+    ambito = Ambito(organizacion_id=elegida[0], nivel_rol=elegida[1])
     if escritura and not ambito.puede_escribir:
         raise PermissionDenied()
     return ambito
