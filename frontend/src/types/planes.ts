@@ -35,3 +35,10 @@ export interface Factura {
   periodoFin: string
   urlPdf: string
 }
+
+/** Respuesta de POST /mi-plan/suscribir/ con el plan ya aplicado. */
+export interface ResultadoSuscripcion {
+  plan: { id: string; nombre: string; tipoFacturacion: TipoFacturacion }
+  estado: string
+  renuevaEn: string
+}

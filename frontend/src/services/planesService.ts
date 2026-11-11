@@ -1,7 +1,7 @@
 import { clienteApi } from './clienteApi'
 import { mapearPagina } from '../types/api'
 import type { PaginaApi, Pagina, RespuestaApi } from '../types/api'
-import type { Factura, MiPlan, Plan, TipoFacturacion } from '../types/planes'
+import type { Factura, MiPlan, Plan, ResultadoSuscripcion, TipoFacturacion } from '../types/planes'
 
 interface PlanApi {
   id: string
@@ -25,6 +25,12 @@ interface MiPlanApi {
     libre_legible: string
     porcentaje_usado: number
   }
+}
+
+interface ResultadoSuscripcionApi {
+  plan: { id: string; nombre: string; tipo_facturacion: TipoFacturacion }
+  estado: string
+  renueva_en: string
 }
 
 interface FacturaApi {
@@ -82,8 +88,17 @@ export async function obtenerMiPlan(): Promise<MiPlan> {
  * POST /mi-plan/suscribir/ (contrato 10.3).
  * Si el uso actual supera el límite del plan nuevo, lanza un ErrorApi con código CUOTA_EXCEDIDA.
  */
-export async function suscribirPlan(planId: string, tipoFacturacion: TipoFacturacion): Promise<void> {
-  await clienteApi.post('/mi-plan/suscribir/', { plan_id: planId, tipo_facturacion: tipoFacturacion })
+export async function suscribirPlan(planId: string, tipoFacturacion: TipoFacturacion): Promise<ResultadoSuscripcion> {
+  const respuesta = await clienteApi.post<RespuestaApi<ResultadoSuscripcionApi>>('/mi-plan/suscribir/', {
+    plan_id: planId,
+    tipo_facturacion: tipoFacturacion,
+  })
+  const resultado = respuesta.data.data
+  return {
+    plan: { id: resultado.plan.id, nombre: resultado.plan.nombre, tipoFacturacion: resultado.plan.tipo_facturacion },
+    estado: resultado.estado,
+    renuevaEn: resultado.renueva_en,
+  }
 }
 
 /** GET /mi-plan/facturas/ (contrato 10.4) */

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { HardDrive, CheckCircle, Check, ChevronRight, X, Loader2 } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { listarPlanes, obtenerMiPlan, suscribirPlan } from '../services/planesService'
@@ -43,6 +44,7 @@ function construirAccion(planId: string, planActualId: string): { etiqueta: stri
 }
 
 function PlanesPage() {
+  const navigate = useNavigate()
   const [facturacion, setFacturacion] = useState<TipoFacturacion>('mensual')
   const [planes, setPlanes] = useState<Plan[]>([])
   const [miPlan, setMiPlan] = useState<MiPlan | null>(null)
@@ -101,6 +103,11 @@ function PlanesPage() {
 
   async function manejarActualizarPlan(plan: PlanCatalogo) {
     if (plan.id === miPlan?.plan.id) return
+        // Los planes de pago pasan primero por la pantalla de pago simulado.
+    if (plan.precioMensual > 0) {
+      navigate(`/planes/pago?plan=${encodeURIComponent(plan.id)}&facturacion=${facturacion}`)
+      return
+    }
     setSuscribiendoPlanId(plan.id)
     setErrorGeneral('')
     try {

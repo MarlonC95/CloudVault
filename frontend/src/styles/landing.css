@@ -1,0 +1,369 @@
+/* Estilos de la landing page. Todas las clases empiezan con "lp-" para no chocar con el resto de la app. */
+.lp {
+  --lp-marca: #2563eb;
+  --lp-marca-oscura: #1d4ed8;
+  --lp-navy: #0f172a;
+  --lp-texto: #334155;
+  --lp-suave: #64748b;
+  --lp-borde: #e2e8f0;
+  background: #fff;
+  color: var(--lp-navy);
+  overflow-x: clip;
+}
+
+.lp-contenedor {
+  width: 100%;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* Barra de navegación */
+.lp-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.lp-nav a.lp-enlace {
+  color: #cbd5e1;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+.lp-nav a.lp-enlace:hover {
+  color: #fff;
+}
+
+/* Botones */
+.lp-boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 12px 24px;
+  font-weight: 600;
+  font-size: 15px;
+  text-decoration: none;
+  border: none;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.lp-boton:hover {
+  transform: translateY(-2px);
+}
+.lp-boton-primario {
+  background: var(--lp-marca);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.35);
+}
+.lp-boton-primario:hover {
+  background: var(--lp-marca-oscura);
+  color: #fff;
+}
+.lp-boton-claro {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.lp-boton-claro:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+.lp-boton-pequeno {
+  padding: 8px 18px;
+  font-size: 14px;
+}
+
+/* Hero */
+.lp-hero {
+  position: relative;
+  background:
+    radial-gradient(900px 500px at 85% 10%, rgba(37, 99, 235, 0.35), transparent 60%),
+    radial-gradient(700px 400px at 0% 100%, rgba(124, 58, 237, 0.18), transparent 60%),
+    var(--lp-navy);
+  color: #fff;
+  padding: 72px 0 96px;
+}
+.lp-insignia {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #bfdbfe;
+  background: rgba(37, 99, 235, 0.16);
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  border-radius: 999px;
+  padding: 6px 14px;
+}
+.lp-titulo-hero {
+  font-size: clamp(36px, 6vw, 60px);
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: -0.035em;
+  margin: 22px 0 18px;
+}
+.lp-titulo-hero span {
+  background: linear-gradient(90deg, #60a5fa, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.lp-subtitulo-hero {
+  font-size: 18px;
+  line-height: 1.6;
+  color: #cbd5e1;
+  max-width: 520px;
+}
+
+/* Maqueta de la app en el hero */
+.lp-maqueta {
+  position: relative;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 40px 80px rgba(2, 6, 23, 0.55);
+  overflow: hidden;
+  transform: perspective(1400px) rotateY(-8deg) rotateX(3deg);
+  transition: transform 0.5s ease;
+}
+.lp-maqueta:hover {
+  transform: perspective(1400px) rotateY(0) rotateX(0);
+}
+.lp-flotante {
+  position: absolute;
+  background: #fff;
+  color: var(--lp-navy);
+  border-radius: 14px;
+  box-shadow: 0 16px 36px rgba(2, 6, 23, 0.25);
+  padding: 12px 14px;
+  font-size: 13px;
+  animation: lp-flotar 4s ease-in-out infinite;
+}
+@keyframes lp-flotar {
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+/* Franja de datos */
+.lp-datos {
+  margin-top: -44px;
+  position: relative;
+  z-index: 2;
+}
+.lp-dato {
+  background: #fff;
+  border: 1px solid var(--lp-borde);
+  border-radius: 18px;
+  padding: 20px;
+  text-align: center;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  height: 100%;
+}
+
+/* Secciones */
+.lp-seccion {
+  scroll-margin-top: 64px;
+  padding: 96px 0;
+}
+.lp-seccion-gris {
+  background: #f8fafc;
+}
+.lp-etiqueta {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lp-marca);
+}
+.lp-titulo-seccion {
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin: 10px 0 14px;
+}
+.lp-texto-seccion {
+  font-size: 17px;
+  color: var(--lp-suave);
+  line-height: 1.6;
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+/* Tarjetas de características */
+.lp-tarjeta {
+  background: #fff;
+  border: 1px solid var(--lp-borde);
+  border-radius: 20px;
+  padding: 28px;
+  height: 100%;
+  transition: transform 0.25s, box-shadow 0.25s, border-color 0.25s;
+}
+.lp-tarjeta:hover {
+  transform: translateY(-6px);
+  border-color: #bfdbfe;
+  box-shadow: 0 20px 40px rgba(37, 99, 235, 0.1);
+}
+.lp-icono {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  color: var(--lp-marca);
+  margin-bottom: 18px;
+}
+
+/* Pasos */
+.lp-numero-paso {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.3);
+  margin: 0 auto 18px;
+}
+
+/* Planes */
+.lp-plan {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--lp-borde);
+  border-radius: 22px;
+  padding: 32px 28px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.25s, box-shadow 0.25s;
+}
+.lp-plan:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+}
+.lp-plan-popular {
+  border: 2px solid var(--lp-marca);
+  box-shadow: 0 24px 50px rgba(37, 99, 235, 0.18);
+}
+.lp-cinta {
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--lp-marca);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 14px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.lp-selector {
+  display: inline-flex;
+  padding: 4px;
+  background: #f1f5f9;
+  border-radius: 999px;
+}
+.lp-selector button {
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lp-suave);
+  transition: background 0.2s, color 0.2s;
+}
+.lp-selector button[aria-checked='true'] {
+  background: #fff;
+  color: var(--lp-marca);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+}
+
+/* Preguntas frecuentes */
+.lp-pregunta {
+  background: #fff;
+  border: 1px solid var(--lp-borde);
+  border-radius: 16px;
+  padding: 0 22px;
+  margin-bottom: 12px;
+}
+.lp-pregunta summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 20px 0;
+  font-weight: 600;
+  font-size: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.lp-pregunta summary::-webkit-details-marker {
+  display: none;
+}
+.lp-pregunta summary svg {
+  flex-shrink: 0;
+  color: var(--lp-marca);
+  transition: transform 0.25s;
+}
+.lp-pregunta[open] summary svg {
+  transform: rotate(45deg);
+}
+.lp-pregunta p {
+  color: var(--lp-suave);
+  line-height: 1.6;
+  padding-bottom: 20px;
+  margin: 0;
+}
+
+/* Llamado final y pie */
+.lp-cta {
+  background: linear-gradient(135deg, #1e3a8a, #2563eb 55%, #7c3aed);
+  border-radius: 28px;
+  color: #fff;
+  padding: 56px 32px;
+  text-align: center;
+}
+.lp-pie {
+  background: var(--lp-navy);
+  color: #94a3b8;
+  padding: 48px 0 32px;
+  font-size: 14px;
+}
+.lp-pie a {
+  color: #cbd5e1;
+  text-decoration: none;
+}
+.lp-pie a:hover {
+  color: #fff;
+}
+
+@media (max-width: 991.98px) {
+  .lp-maqueta {
+    transform: none;
+  }
+  .lp-hero {
+    padding: 56px 0 88px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp *,
+  .lp *::before,
+  .lp *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

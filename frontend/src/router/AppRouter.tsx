@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import ArchivosProvider from '../context/ArchivosProvider'
+import LandingPage from '../pages/LandingPage'
 import LoginPage from '../pages/LoginPage'
 import RegisterPage from '../pages/RegisterPage'
 import RecoverPasswordPage from '../pages/RecoverPasswordPage'
@@ -7,6 +8,7 @@ import DashboardPage from '../pages/DashboardPage'
 import PapeleraPage from '../pages/PapeleraPage'
 import ProfilePage from '../pages/ProfilePage'
 import PlanesPage from '../pages/PlanesPage'
+import PagoPage from '../pages/PagoPage'
 import AdministracionPage from '../pages/AdministracionPage'
 import PlataformaPage from '../pages/PlataformaPage'
 import { obtenerSesion } from '../services/authService'
@@ -32,6 +34,7 @@ function AppRouter() {
     <BrowserRouter>
       <Routes>
         <Route element={<RutaPublica />}>
+          <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/registro" element={<RegisterPage />} />
           <Route path="/recuperar" element={<RecoverPasswordPage />} />
@@ -41,10 +44,11 @@ function AppRouter() {
           <Route path="/papelera" element={<PapeleraPage />} />
           <Route path="/perfil" element={<ProfilePage />} />
           <Route path="/planes" element={<PlanesPage />} />
+          <Route path="/planes/pago" element={<PagoPage />} />
           <Route path="/administracion" element={<AdministracionPage />} />
           <Route path="/administracion/plataforma" element={<PlataformaPage />} />
         </Route>
-        <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )
