@@ -61,6 +61,10 @@ class RepositorioPapelera:
             pk=archivo_id, organizacion_id=org).first()
 
     def permisos(self, actor, archivo, bloquear=True):
+        if archivo.carpeta_id is None and getattr(archivo, "propietario_id", None) == actor:
+            from compartir.acceso import es_compartida
+            if es_compartida(archivo.organizacion_id, self.using):
+                return ["ESCRITURA"]
         carpetas, visitadas = [], set()
         padre = archivo.carpeta_id
         while padre is not None:
@@ -79,9 +83,12 @@ class RepositorioPapelera:
             carpetas.append(padre)
             padre = carpeta.padre_id
         with connections[self.using].cursor() as cursor:
-            cursor.execute("""SELECT tipo_permiso FROM permisos_recurso
-                WHERE usuario_id = %s AND (archivo_id = %s OR carpeta_id = ANY(%s::uuid[]))
-                """ + (" FOR SHARE" if bloquear else ""), [actor, archivo.pk, carpetas])
+            cursor.execute("""SELECT COALESCE(e.rol, p.tipo_permiso) FROM permisos_recurso p
+                LEFT JOIN enlaces_publicos e ON e.id = p.enlace_id
+                WHERE p.usuario_id = %s AND (p.archivo_id = %s OR p.carpeta_id = ANY(%s::uuid[]))
+                AND (p.enlace_id IS NULL OR e.id IS NOT NULL AND
+                     (e.fecha_expiracion IS NULL OR e.fecha_expiracion > now()))
+                """ + (" FOR SHARE OF p" if bloquear else ""), [actor, archivo.pk, carpetas])
             return [fila[0] for fila in cursor.fetchall()]
 
     def purga_pendiente(self, archivo, *, excluir_operacion_lote=None):

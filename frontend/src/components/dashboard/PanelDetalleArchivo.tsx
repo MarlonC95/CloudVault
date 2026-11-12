@@ -5,7 +5,7 @@ import type { Archivo } from '../../types/archivo'
 interface PanelDetalleArchivoProps {
   archivo: Archivo | null
   onDescargar: (archivo: Archivo) => void
-  onCompartir: (archivo: Archivo) => void
+  onCompartir?: (archivo: Archivo) => void
   onEliminar: (archivo: Archivo) => void
   onMover: (archivo: Archivo) => void
 }
@@ -116,28 +116,30 @@ function PanelDetalleArchivo({ archivo, onDescargar, onCompartir, onEliminar, on
             <Download size={13} strokeWidth={2.2} />
             Descargar
           </button>
-          <button
-            type="button"
-            onClick={() => onCompartir(archivo)}
-            style={{
-              width: '100%',
-              background: '#F8FAFC',
-              color: '#374151',
-              border: '1px solid #E2E8F0',
-              borderRadius: 8,
-              padding: '8px 0',
-              fontWeight: 500,
-              fontSize: 13,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-            }}
-          >
-            <Users size={13} strokeWidth={1.9} />
-            Compartir
-          </button>
+          {onCompartir && (
+            <button
+              type="button"
+              onClick={() => onCompartir(archivo)}
+              style={{
+                width: '100%',
+                background: '#F8FAFC',
+                color: '#374151',
+                border: '1px solid #E2E8F0',
+                borderRadius: 8,
+                padding: '8px 0',
+                fontWeight: 500,
+                fontSize: 13,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+              }}
+            >
+              <Users size={13} strokeWidth={1.9} />
+              Compartir
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onMover(archivo)}

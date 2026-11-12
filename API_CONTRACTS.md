@@ -1769,9 +1769,10 @@ confirmación, obtienen el ámbito del recurso o de la reserva persistida; desca
 conserva su contrato sin parámetros de consulta.
 
 El inicio de carga admite un `organizacion_id` UUID opcional en el cuerpo.
-Con ámbito explícito se valida la membresía vigente, el permiso de escritura y
-que la carpeta pertenezca a esa organización. Se revalida bajo bloqueo y durante
-la confirmación usando la organización guardada en la reserva. El proveedor
+Con ámbito explícito se valida el rol de escritura del miembro y que la carpeta
+pertenezca a esa organización. Una persona externa puede subir a una carpeta
+con una concesión vigente de escritura en ese mismo ámbito. Los permisos se
+revalidan durante la confirmación con la organización guardada en la reserva. El proveedor
 `storage.servicios.ProveedorStorage` implementa la capacidad opcional
 `resolver_destino_organizacion`; los proveedores anteriores solo se aceptan si
 su resolución inequívoca devuelve exactamente el mismo destino.
@@ -1780,3 +1781,38 @@ El cambio de organización reinicia el estado del panel; una mutación o carga
 en curso mantiene su organización de origen y bloquea el selector hasta terminar.
 La visibilidad y los permisos internos de organización se distinguen de los
 enlaces externos de compartición, cuyo flujo es independiente.
+
+## Invitaciones internas de organización
+
+Este flujo entrega invitaciones en CloudVault a cuentas registradas. La cuenta
+destinataria se identifica por UUID y puede abrir su bandeja antes de elegir una
+organización. La membresía se activa al aceptar. El propietario puede revocar
+una pendiente y su vigencia es de 48 horas.
+
+| Método y ruta bajo /api/v1 | Entrada | Resultado |
+| --- | --- | --- |
+| POST /organizaciones/compartidas/ | id UUID generado por el cliente, nombre | 201 crea un espacio COMPARTIDO, su propietario y el plan gratuito vigente. 200 al repetir el mismo ID y nombre como propietario |
+| POST /organizaciones/{id}/miembros/invitar/ | correo_electronico exacto de una cuenta activa, rol LECTOR_NV1, OPERATIVO_NV2 o AVANZADO_NV3 | 201 crea pendiente. 200 devuelve la misma invitación vigente con el mismo rol |
+| GET /organizaciones/{id}/invitaciones/ | page opcional | 200 con pendientes vigentes de la organización, solo para su propietario |
+| GET /organizaciones/invitaciones/recibidas/ | page opcional | 200 con pendientes vigentes de la cuenta autenticada |
+| POST /organizaciones/invitaciones/{id}/decision/ | decision ACEPTAR o RECHAZAR | 200 registra el resultado. Repetir la misma decisión conserva el resultado |
+| DELETE /organizaciones/{id}/invitaciones/{invitacion_id}/ | Cuerpo vacío | 204 revoca una pendiente de la organización |
+
+Los listados están paginados dentro de data. Las respuestas de invitaciones
+usan Cache-Control no-store. Una invitación cerrada o una decisión incompatible
+devuelve 409. El envío y la aceptación requieren un propietario vigente, tipo
+COMPARTIDO y una suscripción vigente. Aceptar guarda la membresía, la decisión y
+la auditoría dentro de la misma transacción. En una cuenta legada sin
+membresías, se inicializa el espacio personal antes de activar la nueva
+membresía. En espacios COMPARTIDO, los
+miembros acceden a sus archivos y a los recursos con permisos concedidos, dentro
+de las facultades de su rol. El dueño administra el espacio y las concesiones. Los enlaces protegidos
+requieren su comprobante de contraseña, incluso si el recurso ya es visible por
+un permiso independiente.
+
+Antes de desplegar esta versión, confirmar con el responsable de datos que
+organizaciones.tipo e invitaciones_organizacion están disponibles, incluyendo
+la unicidad parcial de pendientes y los permisos de lectura e inserción o
+actualización de la cuenta de la aplicación sobre la tabla de invitaciones. Confirmar la clasificación de organizaciones
+existentes con su propietario o con una fuente verificada. Las de tipo NULL no
+admiten invitaciones. Los espacios personales nuevos se guardan como PERSONAL.

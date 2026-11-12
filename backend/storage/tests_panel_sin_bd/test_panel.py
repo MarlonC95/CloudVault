@@ -38,15 +38,18 @@ class EspaciosHTTPTests(SimpleTestCase):
         self.lista.__getitem__.return_value.values.return_value = [
             {"organizacion_id": ORG, "nivel_rol": 1}, {"organizacion_id": OTRA, "nivel_rol": 3}]
         self.orgs = self.enterContext(patch("auth_workspaces.espacios_disponibles.Organizacion.objects"))
-        self.orgs.filter.return_value.values_list.return_value = [(ORG, "Equipo A"), (OTRA, "Equipo B")]
+        self.orgs.filter.return_value.values.return_value = [
+            {"id": ORG, "nombre": "Equipo A", "tipo": "COMPARTIDO"},
+            {"id": OTRA, "nombre": "Equipo B", "tipo": None},
+        ]
         self.ruta = "/api/v1/organizaciones/disponibles/"
 
     def test_solo_membresias_actor_con_proyeccion_publica_y_ruta_produccion(self):
         r = self.client.get(self.ruta)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["data"]["results"], [
-            {"id": str(ORG), "nombre": "Equipo A", "nivel_rol": 1},
-            {"id": str(OTRA), "nombre": "Equipo B", "nivel_rol": 3}])
+            {"id": str(ORG), "nombre": "Equipo A", "nivel_rol": 1, "tipo": "COMPARTIDO"},
+            {"id": str(OTRA), "nombre": "Equipo B", "nivel_rol": 3, "tipo": None}])
         self.miembros.filter.assert_called_once_with(usuario_id=A)
         self.assertEqual(r["Cache-Control"], "no-store")
         self.miembros.create.assert_not_called()
@@ -156,6 +159,7 @@ class DestinoOrganizacionTests(SimpleTestCase):
         self.carpetas = self.enterContext(patch("storage.servicios.Carpeta.objects"))
         self.existe = self.carpetas.using.return_value.filter.return_value.exists
         self.existe.return_value = True
+        self.enterContext(patch("storage.servicios.es_compartida", return_value=False))
 
     def test_raiz_explicita_y_carpeta_con_membresia_vigente(self):
         for carpeta in (None, B):

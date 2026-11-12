@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, Shield } from 'lucide-react'
+import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, UsersRound } from 'lucide-react'
 import { cerrarSesionEnServidor, obtenerSesion } from '../../services/authService'
 import { useOrganizacion } from '../../context/organizacionesContexto'
 import { useArchivos } from '../../context/archivosContexto'
@@ -16,7 +16,7 @@ export type SeccionExplorador =
   | 'recientes'
   | 'papelera'
   | 'planes'
-  | 'administracion'
+  | 'miembros'
 
 interface ElementoMenu {
   id: SeccionExplorador
@@ -34,7 +34,7 @@ const ELEMENTOS_EXPLORADOR: ElementoMenu[] = [
 const ELEMENTOS_GESTION: ElementoMenu[] = [
   { id: 'papelera', etiqueta: 'Papelera', icono: <Trash2 size={18} />, ruta: '/papelera' },
   { id: 'planes', etiqueta: 'Planes', icono: <Zap size={18} />, ruta: '/planes' },
-  { id: 'administracion', etiqueta: 'Administración', icono: <Shield size={18} />, ruta: '/administracion' },
+  { id: 'miembros', etiqueta: 'Miembros', icono: <UsersRound size={18} />, ruta: '/organizacion/miembros' },
 ]
 
 interface DashboardLayoutProps {

@@ -133,7 +133,14 @@ def _nivel_miembro(valor):
 
 
 _RECURSO = {"recurso_id": _uuid_publico, "tipo_elemento": _tipo_elemento}
+_INVITACION = {"invitacion_id": _uuid_publico, "usuario_afectado_id": _uuid_publico, "nivel_rol": _nivel_miembro}
 _DETALLES_PUBLICOS = {
+    "INVITATION_CREATED": _INVITACION,
+    "INVITATION_ACCEPTED": _INVITACION,
+    "INVITATION_REJECTED": _INVITACION,
+    "INVITATION_REVOKED": _INVITACION,
+    "INVITATION_EXPIRED": _INVITACION,
+    "WORKSPACE_CREATED": {},
     "MEMBER_ROLE_CHANGED": {"usuario_afectado_id": _uuid_publico, "nivel_anterior": _nivel_miembro, "nivel_nuevo": _nivel_miembro},
     "MEMBER_REMOVED": {"usuario_afectado_id": _uuid_publico, "nivel_anterior": _nivel_miembro},
     "USER_REGISTERED": {},

@@ -54,6 +54,7 @@ class ListadoMiembrosTests(SimpleTestCase):
             with self.subTest(nivel=nivel):
                 response = self.client.get(self.url)
                 self.assertEqual(response.status_code, 200)
+                self.assertEqual(response["Cache-Control"], "no-store")
                 self.assertEqual(response.json(), {
                     "count": 1, "next": None, "previous": None, "page_size": 50,
                     "results": [{

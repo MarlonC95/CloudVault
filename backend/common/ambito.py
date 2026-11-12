@@ -24,6 +24,11 @@ NIVEL_ADMIN = 0
 class Ambito:
     organizacion_id: UUID
     nivel_rol: int
+    tipo_organizacion: str | None = None
+
+    @property
+    def requiere_permiso_recurso(self):
+        return self.tipo_organizacion == "COMPARTIDO" and not self.es_admin
 
     @property
     def puede_escribir(self):
@@ -48,7 +53,7 @@ def _a_uuid(valor):
 def _membresias(usuario, using):
     with connections[using].cursor() as cursor:
         cursor.execute(
-            """SELECT m.organizacion_id, m.nivel_rol
+            """SELECT m.organizacion_id, m.nivel_rol, o.tipo
                FROM miembros_organizacion m
                JOIN organizaciones o ON o.id = m.organizacion_id
                WHERE m.usuario_id = %s
@@ -86,7 +91,7 @@ def resolver_organizacion(usuario, organizacion_id=None, escritura=False, using=
         elegida = membresias[0]
     if type(elegida[1]) is not int or elegida[1] not in (0, 1, 2, 3):
         raise PermissionDenied()
-    ambito = Ambito(organizacion_id=elegida[0], nivel_rol=elegida[1])
+    ambito = Ambito(*elegida)
     if escritura and not ambito.puede_escribir:
         raise PermissionDenied()
     return ambito

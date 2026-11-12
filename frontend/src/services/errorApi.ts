@@ -10,6 +10,12 @@ export type CodigoErrorApi =
   | 'TOKEN_INVALIDO'
   | 'SIN_PERMISO'
   | 'NO_ENCONTRADO'
+  | 'OWNER_REQUIRED'
+  | 'PLAN_FEATURE_REQUIRED'
+  | 'MEMBER_EXISTS'
+  | 'INVITATION_PENDING'
+  | 'INVITATION_CLOSED'
+  | 'IDEMPOTENCY_CONFLICT'
   | 'CORREO_EN_USO'
   | 'CUOTA_EXCEDIDA'
   | 'RATE_LIMITED'
@@ -35,6 +41,12 @@ const MENSAJES_POR_CODIGO: Record<CodigoErrorApi, string> = {
   TOKEN_INVALIDO: 'Tu sesión expiró. Inicia sesión de nuevo.',
   SIN_PERMISO: 'No tienes permiso para realizar esta acción.',
   NO_ENCONTRADO: 'No encontramos lo que buscas.',
+  OWNER_REQUIRED: 'El propietario de la organización no puede modificarse ni retirarse.',
+  PLAN_FEATURE_REQUIRED: 'Esta operación requiere una organización compartida con un plan vigente.',
+  MEMBER_EXISTS: 'La cuenta ya pertenece a esta organización.',
+  INVITATION_PENDING: 'Ya existe una invitación pendiente con otro rol. Revócala antes de enviar una nueva.',
+  INVITATION_CLOSED: 'La invitación ya fue resuelta o venció.',
+  IDEMPOTENCY_CONFLICT: 'La solicitud ya se usó con datos distintos. Abre un nuevo formulario.',
   CORREO_EN_USO: 'Ese correo ya está registrado. Puedes iniciar sesión o recuperar tu cuenta.',
   CUOTA_EXCEDIDA: 'No tienes almacenamiento suficiente para esta operación.',
   RATE_LIMITED: 'Demasiados intentos. Espera antes de volver a intentarlo.',
@@ -44,8 +56,14 @@ const MENSAJES_POR_CODIGO: Record<CodigoErrorApi, string> = {
   DESCONOCIDO: 'Ocurrió un error inesperado. Intenta de nuevo.',
 }
 
+const ALIAS_CODIGOS: Partial<Record<string, CodigoErrorApi>> = {
+  FORBIDDEN: 'SIN_PERMISO',
+  NOT_FOUND: 'NO_ENCONTRADO',
+  TOKEN_INVALID: 'TOKEN_INVALIDO',
+}
+
 function esCodigoConocido(codigo: string): codigo is CodigoErrorApi {
-  return codigo in MENSAJES_POR_CODIGO
+  return Object.hasOwn(MENSAJES_POR_CODIGO, codigo)
 }
 
 /**
@@ -76,7 +94,10 @@ export function convertirEnErrorApi(error: unknown): ErrorApi {
   if (!error.response) return new ErrorApi('SIN_CONEXION')
 
   const { status, data } = error.response
-  const codigoRecibido = data?.error?.code
+  const codigoOriginal = data?.error?.code
+  const codigoRecibido = codigoOriginal && (Object.hasOwn(ALIAS_CODIGOS, codigoOriginal)
+    ? ALIAS_CODIGOS[codigoOriginal]
+    : codigoOriginal)
   const campos = data?.error?.fields ?? {}
 
   if (codigoRecibido && esCodigoConocido(codigoRecibido)) {

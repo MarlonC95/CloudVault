@@ -29,6 +29,7 @@ interface EstadoNavegacionDashboard {
 
 function DashboardPage() {
   const { organizacion, ejecutar } = useOrganizacion()
+  const puedeCompartir = organizacion.nivelRol === 0
   const navegar = useNavigate()
   const ubicacion = useLocation()
   const { carpetas, archivos, cargando, error, refrescar, crearCarpeta, moverArchivo, enviarAPapelera } = useArchivos()
@@ -192,7 +193,9 @@ function DashboardPage() {
                       cantidadArchivos={carpeta.cantidadArchivos}
                       estaActiva={carpeta.id === carpetaActivaId}
                       onClick={() => setCarpetaActivaId(carpeta.id)}
-                      onCompartir={() => setRecursoParaCompartir({ tipo: 'carpeta', id: carpeta.id, nombre: carpeta.nombre })}
+                      onCompartir={puedeCompartir
+                        ? () => setRecursoParaCompartir({ tipo: 'carpeta', id: carpeta.id, nombre: carpeta.nombre })
+                        : undefined}
                     />
                   ))}
                   <TarjetaNuevaCarpeta onClick={() => setMostrarModalNuevaCarpeta(true)} />
@@ -205,7 +208,7 @@ function DashboardPage() {
               archivoSeleccionadoId={archivoSeleccionado?.id ?? null}
               onSeleccionarArchivo={setArchivoSeleccionado}
               onDescargar={manejarDescargar}
-              onCompartir={compartirArchivo}
+              onCompartir={puedeCompartir ? compartirArchivo : undefined}
               onEliminar={manejarEliminar}
               onMover={setArchivoParaMover}
               titulo={carpetaActiva ? carpetaActiva.nombre.toUpperCase() : `ARCHIVOS DE ${organizacion.nombre.toUpperCase()}`}
@@ -215,7 +218,7 @@ function DashboardPage() {
           <PanelDetalleArchivo
             archivo={archivoSeleccionado}
             onDescargar={manejarDescargar}
-            onCompartir={compartirArchivo}
+            onCompartir={puedeCompartir ? compartirArchivo : undefined}
             onEliminar={manejarEliminar}
             onMover={setArchivoParaMover}
           />
@@ -230,7 +233,7 @@ function DashboardPage() {
         onConfirmarSubida={manejarConfirmarSubida}
       />
 
-      <ModalCompartir recurso={recursoParaCompartir} onCerrar={() => setRecursoParaCompartir(null)} />
+      <ModalCompartir recurso={puedeCompartir ? recursoParaCompartir : null} onCerrar={() => setRecursoParaCompartir(null)} />
 
       <ModalMoverArchivo
         archivo={archivoParaMover}

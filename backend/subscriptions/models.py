@@ -64,11 +64,15 @@ class Suscripcion(models.Model):
 
 
 class Organizacion(models.Model):
-    """Solo el consumo necesario para cuotas; el CRUD pertenece a otro ámbito."""
+    """Mapeo del espacio de trabajo y su clasificación explícita."""
+
+    PERSONAL = "PERSONAL"
+    COMPARTIDO = "COMPARTIDO"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     nombre = models.CharField(max_length=150)
     slug = models.CharField(max_length=150, unique=True)
+    tipo = models.CharField(max_length=10, null=True)
     almacenamiento_usado_bytes = models.BigIntegerField(default=0)
     fecha_creacion = models.DateTimeField(default=timezone.now)
     actualizado_en = models.DateTimeField(default=timezone.now)

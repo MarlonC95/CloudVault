@@ -62,3 +62,25 @@ class LogAuditoria(models.Model):
     class Meta:
         managed = False
         db_table = "logs_auditoria"
+
+
+class InvitacionOrganizacion(models.Model):
+    PENDIENTE = "PENDIENTE"
+    ACEPTADA = "ACEPTADA"
+    RECHAZADA = "RECHAZADA"
+    REVOCADA = "REVOCADA"
+    VENCIDA = "VENCIDA"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organizacion = models.ForeignKey("subscriptions.Organizacion", on_delete=models.CASCADE)
+    invitado_por = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name="+")
+    destinatario_usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name="+")
+    nivel_rol = models.SmallIntegerField()
+    estado = models.CharField(max_length=12, default=PENDIENTE)
+    fecha_creacion = models.DateTimeField(default=timezone.now)
+    fecha_expiracion = models.DateTimeField()
+    fecha_resolucion = models.DateTimeField(null=True)
+
+    class Meta:
+        managed = False
+        db_table = "invitaciones_organizacion"

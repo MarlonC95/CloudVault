@@ -1,4 +1,4 @@
-"""Descubrimiento de membresías existentes; no identifica ni crea espacios personales."""
+"""Descubrimiento de membresías y del tipo registrado de cada organización."""
 
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
@@ -19,16 +19,18 @@ def listar_espacios(usuario, *, page, page_size):
         raise ValidationError({"page": ["La página solicitada no existe."]})
     inicio = (page - 1) * page_size
     filas = list(miembros[inicio:inicio + page_size].values("organizacion_id", "nivel_rol"))
-    nombres = dict(Organizacion.objects.filter(
-        pk__in={f["organizacion_id"] for f in filas},
-    ).values_list("id", "nombre")) if filas else {}
+    espacios = {
+        fila["id"]: fila for fila in Organizacion.objects.filter(
+            pk__in={f["organizacion_id"] for f in filas},
+        ).values("id", "nombre", "tipo")
+    } if filas else {}
     resultados = []
     for fila in filas:
         nivel = fila["nivel_rol"]
         org = fila["organizacion_id"]
-        if type(nivel) is not int or nivel not in ROLES_ORGANIZACION or org not in nombres:
+        if type(nivel) is not int or nivel not in ROLES_ORGANIZACION or org not in espacios:
             raise LecturaMiembrosNoDisponible()
-        resultados.append({"id": str(org), "nombre": nombres[org], "nivel_rol": nivel})
+        resultados.append({"id": str(org), "nombre": espacios[org]["nombre"], "nivel_rol": nivel, "tipo": espacios[org]["tipo"]})
     return count, resultados
 
 

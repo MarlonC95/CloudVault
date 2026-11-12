@@ -8,7 +8,7 @@ interface TablaArchivosProps {
   archivoSeleccionadoId: string | null
   onSeleccionarArchivo: (archivo: Archivo) => void
   onDescargar: (archivo: Archivo) => void
-  onCompartir: (archivo: Archivo) => void
+  onCompartir?: (archivo: Archivo) => void
   onEliminar: (archivo: Archivo) => void
   onMover: (archivo: Archivo) => void
   titulo?: string
@@ -170,6 +170,8 @@ function TablaArchivos({
 
                       <button
                         type="button"
+                        aria-label={`Más acciones para ${archivo.nombre}`}
+                        aria-expanded={menuAbierto}
                         onClick={() => setMenuAbiertoId(menuAbierto ? null : archivo.id)}
                         style={{
                           width: 30,
@@ -214,16 +216,18 @@ function TablaArchivos({
                           >
                             <Eye size={13} strokeWidth={1.9} /> Vista previa
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onCompartir(archivo)
-                              setMenuAbiertoId(null)
-                            }}
-                            style={ESTILO_ITEM_MENU}
-                          >
-                            <Users size={13} strokeWidth={1.9} /> Compartir
-                          </button>
+                          {onCompartir && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onCompartir(archivo)
+                                setMenuAbiertoId(null)
+                              }}
+                              style={ESTILO_ITEM_MENU}
+                            >
+                              <Users size={13} strokeWidth={1.9} /> Compartir
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => {

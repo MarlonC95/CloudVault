@@ -14,6 +14,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from almacenamiento.contrato import CodigoError
 from almacenamiento.errores import ErrorCarga
+from common.ambito import Ambito
 from storage.papelera import ErrorPapelera, ServicioPapelera
 from storage.permisos_papelera import autorizar_envio
 from storage.repositorio_papelera import RepositorioPapelera
@@ -343,7 +344,7 @@ class CoordinacionVistasTests(BasePapeleraTests):
     def llamada(self, method, viewset, action, data=None):
         request = getattr(APIRequestFactory(), method)('/', data or {}, format='json')
         force_authenticate(request, user=SimpleNamespace(pk=self.repo.actor, is_authenticated=True))
-        with patch('storage.views.resolver_organizacion', return_value=SimpleNamespace(organizacion_id=self.repo.org, nivel_rol=0)), \
+        with patch('storage.views.resolver_organizacion', return_value=Ambito(self.repo.org, 0)), \
              patch('storage.views.ServicioPapelera', return_value=self.servicio):
             return viewset.as_view({method:action})(request, pk=str(self.repo.id))
 
@@ -493,7 +494,7 @@ class PurgaFaseTresTests(BasePapeleraTests):
 
     def test_listado_propietario_conserva_filtro_de_ambito(self):
         vista = PapeleraViewSet()
-        with patch.object(vista, '_ambito', return_value=SimpleNamespace(organizacion_id=self.repo.org, nivel_rol=0)), \
+        with patch.object(vista, '_ambito', return_value=Ambito(self.repo.org, 0)), \
              patch('storage.views.Archivo.objects') as archivos:
             vista.get_queryset()
         archivos.filter.assert_called_once_with(organizacion_id=self.repo.org, en_papelera=True)
@@ -712,7 +713,7 @@ class CalendarioPapeleraTests(SimpleTestCase):
 
     def test_orden_estable_con_nulos_al_final(self):
         vista = PapeleraViewSet()
-        with patch.object(vista, '_ambito', return_value=SimpleNamespace(organizacion_id=uuid4(), nivel_rol=0)), \
+        with patch.object(vista, '_ambito', return_value=Ambito(uuid4(), 0)), \
              patch('storage.views.Archivo.objects') as archivos:
             vista.get_queryset()
         orden = archivos.filter.return_value.order_by.call_args.args
@@ -810,12 +811,45 @@ class DestinosYContratosTests(SimpleTestCase):
     def test_listado_avanzado_filtra_antes_de_paginar(self):
         vista=PapeleraViewSet();vista.request=SimpleNamespace(user=SimpleNamespace(pk=uuid4()))
         permitido,denegado=SimpleNamespace(pk=uuid4()),SimpleNamespace(pk=uuid4())
-        with patch.object(vista,'_ambito',return_value=SimpleNamespace(nivel_rol=3,organizacion_id=uuid4())),patch('storage.views.Archivo.objects') as archivos,patch('storage.views.RepositorioPapelera') as repo:
+        with patch.object(vista,'_ambito',return_value=Ambito(uuid4(), 3)),patch('storage.views.Archivo.objects') as archivos,patch('storage.views.RepositorioPapelera') as repo:
             qs=archivos.filter.return_value
             qs.iterator.return_value=iter([permitido,denegado])
             repo.return_value.permisos.side_effect=[['read'],[]]
             vista.get_queryset()
             qs.filter.assert_called_once_with(pk__in=[permitido.pk])
+
+    def test_listado_compartido_oculta_la_carpeta_inaccesible_antes_de_serializar(self):
+        from storage.models import Archivo
+        from storage.serializers import PapeleraSerializer
+
+        ambito = Ambito(uuid4(), 3, "COMPARTIDO")
+        actor = uuid4()
+        archivo_id = uuid4()
+        carpeta_id = uuid4()
+        archivo = Archivo(id=archivo_id, nombre="informe.txt", tamano_bytes=1,
+                          carpeta_id=carpeta_id, en_papelera=True)
+        archivo.carpeta_visible = None
+        vista = PapeleraViewSet()
+        vista.request = SimpleNamespace(user=SimpleNamespace(pk=actor), query_params={})
+        with (
+            patch.object(vista, "_ambito", return_value=ambito),
+            patch("storage.views.Archivo.objects") as archivos,
+            patch("storage.views.RepositorioPapelera") as repo,
+            patch("storage.views.carpetas_autorizadas") as autorizadas,
+            patch("storage.views.con_carpeta_visible") as anotar,
+        ):
+            consulta = archivos.filter.return_value
+            consulta.iterator.return_value = iter([archivo])
+            repo.return_value.permisos.return_value = ["LECTURA"]
+
+            vista.get_queryset()
+
+            consulta.filter.assert_called_once_with(pk__in=[archivo_id])
+            autorizadas.assert_called_once_with(ambito, actor)
+            anotar.assert_called_once_with(consulta.filter.return_value, autorizadas.return_value)
+        self.assertIsNone(PapeleraSerializer(archivo).data["carpeta_id"])
+        del archivo.carpeta_visible
+        self.assertEqual(PapeleraSerializer(archivo).data["carpeta_id"], str(carpeta_id))
 
     def test_vista_raices_no_oculta_archivo_si_la_raiz_no_es_visible(self):
         from auth_workspaces.models import LogAuditoria
@@ -829,8 +863,7 @@ class DestinosYContratosTests(SimpleTestCase):
                 vista.request = SimpleNamespace(
                     user=SimpleNamespace(pk=actor), query_params={"vista": "raices"})
                 lote = SimpleNamespace(detalles={"raiz_id": str(raiz_id)})
-                with patch.object(vista, "_ambito", return_value=SimpleNamespace(
-                        nivel_rol=3, organizacion_id=org)), \
+                with patch.object(vista, "_ambito", return_value=Ambito(org, 3)), \
                      patch("storage.views.Archivo.objects") as archivos, \
                      patch("storage.views.RepositorioPapelera") as repo, \
                      patch.object(LogAuditoria, "objects") as auditoria, \

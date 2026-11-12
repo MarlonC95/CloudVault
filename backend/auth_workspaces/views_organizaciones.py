@@ -74,7 +74,7 @@ class MiembrosOrganizacionView(APIView):
             "previous": _enlace(request, anterior, pagina.page_size),
             "page_size": pagina.page_size,
             "results": MiembroOrganizacionSerializer(pagina.results, many=True).data,
-        })
+        }, headers={"Cache-Control": "no-store"})
 
 
 class GestionMiembroView(APIView):

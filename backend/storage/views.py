@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from uuid import UUID
 
 from django.db import connections
-from django.db.models import F, Q, Sum
+from django.db.models import Case, F, Q, Sum, UUIDField, When
 from django.utils import timezone
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
@@ -18,6 +18,10 @@ from common.formatting import bytes_legibles
 from common.pagination import EnvelopePagination
 from common.responses import fail, ok
 from subscriptions.cuotas import SinSuscripcionVigente
+from compartir.acceso import (
+    acceso_usuario, archivos_visibles, carpetas_autorizadas, con_carpeta_visible, exigir_edicion,
+)
+from compartir.models import ESCRITURA, PermisoRecurso
 
 from .models import Archivo, Carpeta
 from .papelera import ErrorPapelera, ServicioPapelera, identificador
@@ -90,20 +94,34 @@ class CarpetaViewSet(ContratoAPIMixin, viewsets.ModelViewSet):
         return ok(self.get_serializer(self.get_object()).data)
 
     def _ambito(self, escritura=False):
-        return resolver_organizacion(self.request.user, _organizacion_id(self.request), escritura=escritura)
+        ambito = resolver_organizacion(self.request.user, _organizacion_id(self.request), escritura=escritura)
+        self.ocultar_ancestros = ambito.requiere_permiso_recurso
+        return ambito
+
+    def get_serializer_context(self):
+        contexto = super().get_serializer_context()
+        contexto["ocultar_ancestros"] = getattr(self, "ocultar_ancestros", False)
+        return contexto
 
     def get_queryset(self):
         ambito = self._ambito()
         qs = Carpeta.objects.filter(organizacion_id=ambito.organizacion_id, en_papelera=False)
+        if ambito.requiere_permiso_recurso:
+            actor = self.request.user.pk
+            visibles = carpetas_autorizadas(ambito, actor)
+            qs = qs.filter(pk__in=visibles).annotate(padre_visible=Case(
+                When(padre_id__in=visibles, then=F("padre_id")), default=None, output_field=UUIDField(),
+            ))
         if self.action == "list":
             padre = self.request.query_params.get("padre")
             if padre is None:
                 padre = self.request.query_params.get("carpeta_padre_id")
             if padre in ("null", ""):
-                qs = qs.filter(padre__isnull=True)
+                qs = qs.filter(padre_visible__isnull=True) if ambito.requiere_permiso_recurso else qs.filter(padre__isnull=True)
             elif padre is not None:
                 identificador = _uuid(padre)
-                qs = qs.filter(padre_id=identificador) if identificador else qs.none()
+                campo = "padre_visible" if ambito.requiere_permiso_recurso else "padre_id"
+                qs = qs.filter(**{campo: identificador}) if identificador else qs.none()
             buscar = self.request.query_params.get("busqueda") or self.request.query_params.get("buscar")
             if buscar:
                 qs = qs.filter(nombre__icontains=buscar)
@@ -130,15 +148,20 @@ class CarpetaViewSet(ContratoAPIMixin, viewsets.ModelViewSet):
         padre = self._padre(request.data.get("padre_id", request.data.get("carpeta_padre_id")), ambito.organizacion_id)
         if padre is False:
             return fail("VALIDATION_ERROR", {"padre_id": ["La carpeta padre no existe."]})
+        if padre is not None:
+            exigir_edicion(ambito, request.user.pk, carpeta_id=padre.pk)
         if not self._nombre_unico(nombre, padre.pk if padre else None, ambito.organizacion_id):
             return fail("VALIDATION_ERROR", {"nombre": ["Ya existe una carpeta con ese nombre."]}, status=409)
         carpeta = Carpeta.objects.create(organizacion_id=ambito.organizacion_id, padre=padre, nombre=nombre)
+        if ambito.requiere_permiso_recurso:
+            PermisoRecurso.objects.create(carpeta=carpeta, usuario_id=request.user.pk, tipo_permiso=ESCRITURA)
         return ok(self.get_serializer(carpeta).data, status=201)
 
     @coordinar_carpeta
     def update(self, request, *args, **kwargs):
         ambito = self._ambito(escritura=True)
         carpeta = self.get_object()
+        exigir_edicion(ambito, request.user.pk, carpeta_id=carpeta.pk)
         nombre = _nombre(request.data.get("nombre"))
         if not nombre:
             return fail("VALIDATION_ERROR", {"nombre": ["El nombre de la carpeta es obligatorio."]})
@@ -161,9 +184,11 @@ class CarpetaViewSet(ContratoAPIMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def contenido(self, request, pk=None):
         carpeta = self.get_object()
+        contexto = self.get_serializer_context()
+        filtros = {"en_papelera": False, "organizacion_id": carpeta.organizacion_id}
         return ok({
-            "subcarpetas": CarpetaSerializer(carpeta.subcarpetas.filter(en_papelera=False), many=True).data,
-            "archivos": ArchivoSerializer(carpeta.archivos.filter(en_papelera=False), many=True).data,
+            "subcarpetas": CarpetaSerializer(carpeta.subcarpetas.filter(**filtros), many=True, context=contexto).data,
+            "archivos": ArchivoSerializer(carpeta.archivos.filter(**filtros), many=True).data,
         })
 
     @action(detail=True, methods=["post"])
@@ -171,9 +196,12 @@ class CarpetaViewSet(ContratoAPIMixin, viewsets.ModelViewSet):
     def mover(self, request, pk=None):
         ambito = self._ambito(escritura=True)
         carpeta = self.get_object()
+        exigir_edicion(ambito, request.user.pk, carpeta_id=carpeta.pk)
         padre = self._padre(request.data.get("padre_id"), ambito.organizacion_id)
         if padre is False:
             return fail("VALIDATION_ERROR", {"padre_id": ["La carpeta indicada no existe."]})
+        if padre is not None:
+            exigir_edicion(ambito, request.user.pk, carpeta_id=padre.pk)
         ancestro = padre
         while ancestro:
             if ancestro.pk == carpeta.pk:
@@ -182,6 +210,7 @@ class CarpetaViewSet(ContratoAPIMixin, viewsets.ModelViewSet):
         if not self._nombre_unico(carpeta.nombre, padre.pk if padre else None, ambito.organizacion_id, carpeta):
             return fail("VALIDATION_ERROR", {"nombre": ["Ya existe una carpeta con ese nombre."]}, status=409)
         carpeta.padre = padre
+        carpeta.padre_visible = carpeta.padre_id
         carpeta.save(update_fields=["padre"])
         return ok(self.get_serializer(carpeta).data)
 
@@ -202,13 +231,16 @@ class ArchivoViewSet(ContratoAPIMixin, mixins.ListModelMixin, mixins.RetrieveMod
     def get_queryset(self):
         ambito = self._ambito()
         qs = Archivo.objects.filter(organizacion_id=ambito.organizacion_id, en_papelera=False).select_related("propietario", "carpeta")
+        qs = archivos_visibles(qs, ambito, self.request.user.pk)
         if self.action == "list":
             carpeta = self.request.query_params.get("carpeta", self.request.query_params.get("carpeta_id"))
             if carpeta not in (None, "", "null"):
                 identificador = _uuid(carpeta)
-                qs = qs.filter(carpeta_id=identificador) if identificador else qs.none()
+                campo = "carpeta_visible" if ambito.requiere_permiso_recurso else "carpeta_id"
+                qs = qs.filter(**{campo: identificador}) if identificador else qs.none()
             elif "carpeta" not in self.request.query_params and carpeta in ("", "null"):
-                qs = qs.filter(carpeta__isnull=True)
+                campo = "carpeta_visible__isnull" if ambito.requiere_permiso_recurso else "carpeta__isnull"
+                qs = qs.filter(**{campo: True})
             buscar = self.request.query_params.get("busqueda") or self.request.query_params.get("buscar")
             if buscar:
                 qs = qs.filter(nombre__icontains=buscar)
@@ -227,6 +259,8 @@ class ArchivoViewSet(ContratoAPIMixin, mixins.ListModelMixin, mixins.RetrieveMod
     def partial_update(self, request, *args, **kwargs):
         datos = _datos_mutacion_archivo(request, kwargs.get("pk"))
         with ServicioPapelera().proteger(**datos, eliminado=False) as archivo:
+            ambito = self._ambito(escritura=True)
+            exigir_edicion(ambito, request.user.pk, archivo=archivo)
             nombre = _nombre(request.data.get("nombre"))
             if not nombre:
                 return fail("VALIDATION_ERROR", {"nombre": ["El nombre del archivo es obligatorio."]})
@@ -234,6 +268,9 @@ class ArchivoViewSet(ContratoAPIMixin, mixins.ListModelMixin, mixins.RetrieveMod
                 return fail("VALIDATION_ERROR", {"nombre": ["Ya existe un archivo con ese nombre."]}, status=409)
             archivo.nombre = nombre
             archivo.save(update_fields=["nombre", "actualizado_en"])
+            if ambito.requiere_permiso_recurso and archivo.carpeta_id is not None:
+                acceso = acceso_usuario(request.user.pk, carpeta_id=archivo.carpeta_id)
+                archivo.carpeta_visible = archivo.carpeta_id if acceso and acceso.organizacion_id == ambito.organizacion_id else None
             return ok(self.get_serializer(archivo).data)
 
     def destroy(self, request, *args, **kwargs):
@@ -244,6 +281,8 @@ class ArchivoViewSet(ContratoAPIMixin, mixins.ListModelMixin, mixins.RetrieveMod
     def mover(self, request, pk=None):
         datos = _datos_mutacion_archivo(request, pk)
         with ServicioPapelera().proteger(**datos, eliminado=False) as archivo:
+            ambito = self._ambito(escritura=True)
+            exigir_edicion(ambito, request.user.pk, archivo=archivo)
             valor = request.data.get("carpeta_id")
             if valor in (None, "", "null"):
                 carpeta = None
@@ -252,6 +291,8 @@ class ArchivoViewSet(ContratoAPIMixin, mixins.ListModelMixin, mixins.RetrieveMod
                 carpeta = Carpeta.objects.filter(pk=identificador, organizacion_id=datos["organizacion_id"], en_papelera=False).first() if identificador else None
                 if carpeta is None:
                     return fail("VALIDATION_ERROR", {"carpeta_id": ["La carpeta indicada no existe."]})
+            if carpeta is not None:
+                exigir_edicion(ambito, request.user.pk, carpeta_id=carpeta.pk)
             if not self._nombre_unico(archivo.nombre, carpeta.pk if carpeta else None, datos["organizacion_id"], archivo):
                 return fail("VALIDATION_ERROR", {"nombre": ["Ya existe un archivo con ese nombre."]}, status=409)
             archivo.carpeta = carpeta
@@ -327,6 +368,8 @@ class PapeleraViewSet(ContratoAPIMixin, mixins.ListModelMixin, viewsets.GenericV
                 if activa and not restaurada and visible:
                     duplicados.append(archivo.pk)
             qs = qs.exclude(pk__in=duplicados)
+        if ambito.requiere_permiso_recurso:
+            qs = con_carpeta_visible(qs, carpetas_autorizadas(ambito, self.request.user.pk))
         return qs.order_by(F('fecha_papelera').desc(nulls_last=True), 'id')
 
     @action(detail=True, methods=["post"])
@@ -452,7 +495,12 @@ class ResumenUnidadView(ContratoAPIMixin, APIView):
         if fila is None:
             return fail("NO_ENCONTRADO", status=404)
         usado = fila[0]
-        archivos = Archivo.objects.filter(organizacion_id=ambito.organizacion_id, en_papelera=False)
+        archivos = archivos_visibles(
+            Archivo.objects.filter(organizacion_id=ambito.organizacion_id, en_papelera=False), ambito, request.user.pk,
+        )
+        carpetas = Carpeta.objects.filter(organizacion_id=ambito.organizacion_id, en_papelera=False)
+        if ambito.requiere_permiso_recurso:
+            carpetas = carpetas.filter(pk__in=carpetas_autorizadas(ambito, request.user.pk))
         categorias = []
         for etiqueta, extensiones, color in (
             ("Documentos", ("pdf", "docx", "xlsx"), "#2563EB"),
@@ -471,6 +519,6 @@ class ResumenUnidadView(ContratoAPIMixin, APIView):
             "libre_legible": bytes_legibles(max(0, limite - usado)),
             "porcentaje_usado": min(100, round(usado * 100 / limite)) if limite else 0,
             "cantidad_archivos": archivos.count(),
-            "cantidad_carpetas": Carpeta.objects.filter(organizacion_id=ambito.organizacion_id, en_papelera=False).count(),
+            "cantidad_carpetas": carpetas.count(),
             "por_categoria": categorias,
         })
