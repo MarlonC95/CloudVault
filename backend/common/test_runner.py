@@ -15,7 +15,7 @@ from django.db import connections
 from django.test.runner import DiscoverRunner
 
 
-SCRIPTS_POSTERIORES = ("compartir.sql",)
+SCRIPTS_POSTERIORES = ("compartir.sql", "metodos_pago.sql")
 
 
 def _leer(nombre):

@@ -10,12 +10,20 @@ from common.testing import (
     espacio_de_trabajo,
 )
 from subscriptions import services
-from subscriptions.models import HistorialPago, Suscripcion
+from subscriptions.models import HistorialPago, MetodoPago, Suscripcion
 
 GB = 1024 ** 3
 MI_PLAN = "/api/v1/mi-plan/"
 SUSCRIBIR = "/api/v1/mi-plan/suscribir/"
 FACTURAS = "/api/v1/mi-plan/facturas/"
+
+
+def crear_tarjeta(organizacion_id, anio=2099, mes=12):
+    return MetodoPago.objects.create(
+        organizacion_id=organizacion_id, titular="Ana Prueba", marca="visa",
+        tipo="CREDITO", ultimos4="4242", mes_expiracion=mes, anio_expiracion=anio,
+        predeterminada=True,
+    )
 
 
 def fijar_uso(organizacion_id, usado_bytes):
@@ -73,13 +81,47 @@ class SuscribirTests(TestCase):
     def setUp(self):
         self.usuario_id, self.organizacion_id = espacio_de_trabajo()
         self.client = cliente_autenticado(self.usuario_id)
+        self.tarjeta = crear_tarjeta(self.organizacion_id)
 
     def suscribir(self, plan_id, tipo_facturacion="mensual"):
         return self.client.post(
             SUSCRIBIR,
-            {"plan_id": plan_id, "tipo_facturacion": tipo_facturacion},
+            {"plan_id": plan_id, "tipo_facturacion": tipo_facturacion,
+             "tarjeta_id": str(self.tarjeta.id)},
             format="json",
         )
+
+    def test_plan_de_pago_exige_tarjeta(self):
+        respuesta = self.client.post(
+            SUSCRIBIR, {"plan_id": "pro", "tipo_facturacion": "mensual"}, format="json"
+        )
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("tarjeta_id", respuesta.data["error"]["fields"])
+        self.assertEqual(
+            Suscripcion.objects.get(organizacion_id=self.organizacion_id).plan_id, 1
+        )
+
+    def test_tarjeta_ajena_o_vencida_se_rechaza(self):
+        _, otra_organizacion = espacio_de_trabajo()
+        ajena = crear_tarjeta(otra_organizacion)
+        respuesta = self.client.post(
+            SUSCRIBIR,
+            {"plan_id": "pro", "tipo_facturacion": "mensual", "tarjeta_id": str(ajena.id)},
+            format="json",
+        )
+        self.assertEqual(respuesta.status_code, 400)
+        self.tarjeta.anio_expiracion = 2020
+        self.tarjeta.save()
+        respuesta = self.suscribir("pro")
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("vencida", respuesta.data["error"]["fields"]["tarjeta_id"][0])
+
+    def test_plan_gratuito_no_exige_tarjeta(self):
+        self.suscribir("pro")
+        respuesta = self.client.post(
+            SUSCRIBIR, {"plan_id": "gratuito", "tipo_facturacion": "mensual"}, format="json"
+        )
+        self.assertEqual(respuesta.status_code, 200, respuesta.content)
 
     def test_suscribir_mensual_actualiza_la_suscripcion(self):
         respuesta = self.suscribir("pro", "mensual")
@@ -170,6 +212,7 @@ class SuscribirTests(TestCase):
         pago = HistorialPago.objects.get()
         self.assertEqual(pago.estado, "COMPLETED")
         self.assertEqual(int(pago.monto), 29)
+        self.assertTrue(pago.referencia_transaccion.startswith("sim-visa-4242-"))
 
     def test_suscribir_anual_registra_monto_anual(self):
         respuesta = self.suscribir("pro", "anual")
@@ -189,7 +232,12 @@ class FacturasTests(TestCase):
         self.assertEqual(respuesta.data["error"]["code"], "NO_AUTENTICADO")
 
     def test_facturas_lista_pagos_de_la_suscripcion(self):
-        self.client.post(SUSCRIBIR, {"plan_id": "pro", "tipo_facturacion": "mensual"}, format="json")
+        tarjeta = crear_tarjeta(self.organizacion_id)
+        self.client.post(
+            SUSCRIBIR,
+            {"plan_id": "pro", "tipo_facturacion": "mensual", "tarjeta_id": str(tarjeta.id)},
+            format="json",
+        )
         respuesta = self.client.get(FACTURAS)
         self.assertEqual(respuesta.status_code, 200, respuesta.content)
         data = respuesta.data["data"]

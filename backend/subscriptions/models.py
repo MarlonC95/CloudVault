@@ -116,3 +116,33 @@ class HistorialPago(models.Model):
 
     def __str__(self):
         return f"{self.suscripcion_id} -> {self.estado}"
+
+
+class MetodoPago(models.Model):
+    """Fila de ``metodos_pago`` (database/metodos_pago.sql): tarjeta de pago simulado.
+
+    Solo datos no sensibles; el número completo y el CVV se validan y se descartan.
+    """
+
+    TIPO_CREDITO = "CREDITO"
+    TIPO_DEBITO = "DEBITO"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organizacion_id = models.UUIDField()
+    titular = models.CharField(max_length=150)
+    marca = models.CharField(max_length=50)
+    tipo = models.CharField(max_length=20)
+    ultimos4 = models.CharField(max_length=4, db_column="ultimos_4")
+    mes_expiracion = models.SmallIntegerField(db_column="mes_vencimiento")
+    anio_expiracion = models.SmallIntegerField(db_column="anio_vencimiento")
+    predeterminada = models.BooleanField(default=False, db_column="es_predeterminada")
+    fecha_creacion = models.DateTimeField(default=timezone.now, db_column="creado_en")
+    # Sin trigger en la BD: lo mantiene save(); los update() masivos lo fijan a mano.
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        managed = False
+        db_table = "metodos_pago"
+
+    def __str__(self):
+        return f"{self.marca} •••• {self.ultimos4}"

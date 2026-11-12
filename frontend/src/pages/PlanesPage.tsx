@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { HardDrive, CheckCircle, Check, ChevronRight, X, Loader2 } from 'lucide-react'
+import { HardDrive, CheckCircle, Check, ChevronRight, X, Loader2, CreditCard } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
+import ModalPago from '../components/planes/ModalPago'
 import { useOrganizacion } from '../context/organizacionesContexto'
 import { listarPlanes, obtenerMiPlan, suscribirPlan } from '../services/planesService'
 import { ErrorApi } from '../services/errorApi'
@@ -52,6 +53,10 @@ function PlanesPage() {
   const [cargando, setCargando] = useState(true)
   const [errorGeneral, setErrorGeneral] = useState('')
   const [suscribiendoPlanId, setSuscribiendoPlanId] = useState<string | null>(null)
+  const [aviso, setAviso] = useState('')
+  // Plan de pago pendiente de cobro (abre el modal de pago) o gestión de tarjetas sin cobro.
+  const [planACobrar, setPlanACobrar] = useState<PlanCatalogo | null>(null)
+  const [gestionandoTarjetas, setGestionandoTarjetas] = useState(false)
 
   async function cargarDatos() {
     try {
@@ -101,10 +106,20 @@ function PlanesPage() {
     ]
   }, [planesCatalogo])
 
+  function montoDe(plan: Plan): number {
+    return facturacion === 'anual' ? plan.precioAnual : plan.precioMensual
+  }
+
   async function manejarActualizarPlan(plan: PlanCatalogo) {
     if (plan.id === miPlan?.plan.id) return
-    setSuscribiendoPlanId(plan.id)
     setErrorGeneral('')
+    setAviso('')
+    // Los planes de pago no cambian directo: primero el pago simulado con tarjeta.
+    if (montoDe(plan) > 0) {
+      setPlanACobrar(plan)
+      return
+    }
+    setSuscribiendoPlanId(plan.id)
     try {
       await ejecutar(() => suscribirPlan(plan.id, facturacion, organizacion.id))
       await cargarDatos()
@@ -117,6 +132,15 @@ function PlanesPage() {
     } finally {
       setSuscribiendoPlanId(null)
     }
+  }
+
+  /** Lo llama el modal; si falla, el modal muestra el error y sigue abierto. */
+  async function pagarPlan(tarjetaId: string) {
+    if (!planACobrar) return
+    await ejecutar(() => suscribirPlan(planACobrar.id, facturacion, organizacion.id, tarjetaId))
+    setAviso(`Pago aprobado (simulado). Ahora tienes el plan ${planACobrar.nombre}.`)
+    setPlanACobrar(null)
+    await cargarDatos()
   }
 
 
@@ -176,6 +200,12 @@ function PlanesPage() {
             </div>
           </div>
 
+          {aviso && (
+            <div className="alert alert-success" role="status" style={{ maxWidth: 560, width: '100%', marginBottom: 16 }}>
+              {aviso}
+            </div>
+          )}
+
           {errorGeneral && (
             <div className="alert alert-danger" role="alert" style={{ maxWidth: 560, width: '100%', marginBottom: 16 }}>
               {errorGeneral}
@@ -209,6 +239,15 @@ function PlanesPage() {
             </div>
             <span style={{ fontSize: 12, color: '#94A3B8' }}>{libreTexto} libres</span>
           </div>
+
+          <button
+            type="button"
+            className="btn btn-link btn-sm d-flex align-items-center gap-1 mt-2"
+            onClick={() => setGestionandoTarjetas(true)}
+            disabled={cargando}
+          >
+            <CreditCard size={15} /> Métodos de pago
+          </button>
         </div>
 
         {cargando ? (
@@ -498,6 +537,18 @@ function PlanesPage() {
           </>
         )}
       </div>
+
+      {planACobrar && (
+        <ModalPago
+          cobro={{
+            concepto: `Plan ${planACobrar.nombre} (${facturacion})`,
+            monto: montoDe(planACobrar),
+          }}
+          onCerrar={() => setPlanACobrar(null)}
+          onPagar={pagarPlan}
+        />
+      )}
+      {gestionandoTarjetas && <ModalPago onCerrar={() => setGestionandoTarjetas(false)} />}
     </DashboardLayout>
   )
 }

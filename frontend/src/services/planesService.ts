@@ -1,7 +1,7 @@
 import { clienteApi } from './clienteApi'
 import { mapearPagina } from '../types/api'
 import type { PaginaApi, Pagina, RespuestaApi } from '../types/api'
-import type { Factura, MiPlan, Plan, TipoFacturacion } from '../types/planes'
+import type { DatosTarjeta, Factura, MiPlan, Plan, Tarjeta, TipoFacturacion, TipoTarjeta } from '../types/planes'
 
 interface PlanApi {
   id: string
@@ -79,11 +79,73 @@ export async function obtenerMiPlan(organizacionId: string): Promise<MiPlan> {
 }
 
 /**
- * POST /mi-plan/suscribir/ (contrato 10.3).
+ * POST /mi-plan/suscribir/ (contrato 10.3). Los planes de pago exigen `tarjetaId` (pago simulado).
  * Si el uso actual supera el límite del plan nuevo, lanza un ErrorApi con código CUOTA_EXCEDIDA.
  */
-export async function suscribirPlan(planId: string, tipoFacturacion: TipoFacturacion, organizacionId: string): Promise<void> {
-  await clienteApi.post('/mi-plan/suscribir/', { plan_id: planId, tipo_facturacion: tipoFacturacion, organizacion_id: organizacionId })
+export async function suscribirPlan(planId: string, tipoFacturacion: TipoFacturacion, organizacionId: string, tarjetaId?: string): Promise<void> {
+  await clienteApi.post('/mi-plan/suscribir/', { plan_id: planId, tipo_facturacion: tipoFacturacion, organizacion_id: organizacionId, tarjeta_id: tarjetaId })
+}
+
+interface TarjetaApi {
+  id: string
+  titular: string
+  marca: string
+  tipo: TipoTarjeta
+  ultimos4: string
+  mes_expiracion: number
+  anio_expiracion: number
+  predeterminada: boolean
+}
+
+function mapearTarjeta(tarjeta: TarjetaApi): Tarjeta {
+  return {
+    id: tarjeta.id,
+    titular: tarjeta.titular,
+    marca: tarjeta.marca,
+    tipo: tarjeta.tipo,
+    ultimos4: tarjeta.ultimos4,
+    mesExpiracion: tarjeta.mes_expiracion,
+    anioExpiracion: tarjeta.anio_expiracion,
+    predeterminada: tarjeta.predeterminada,
+  }
+}
+
+function datosTarjetaApi(datos: Partial<DatosTarjeta>) {
+  return {
+    titular: datos.titular,
+    numero: datos.numero,
+    cvv: datos.cvv,
+    mes_expiracion: datos.mesExpiracion,
+    anio_expiracion: datos.anioExpiracion,
+    tipo: datos.tipo,
+  }
+}
+
+/** GET /mi-plan/tarjetas/ (contrato 10.5): máximo 2 tarjetas por organización. */
+export async function listarTarjetas(organizacionId: string): Promise<Tarjeta[]> {
+  const respuesta = await clienteApi.get<RespuestaApi<TarjetaApi[]>>('/mi-plan/tarjetas/', { params: { organizacion_id: organizacionId } })
+  return respuesta.data.data.map(mapearTarjeta)
+}
+
+/** POST /mi-plan/tarjetas/ (contrato 10.5) */
+export async function guardarTarjeta(datos: DatosTarjeta, organizacionId: string): Promise<Tarjeta> {
+  const respuesta = await clienteApi.post<RespuestaApi<TarjetaApi>>('/mi-plan/tarjetas/', { ...datosTarjetaApi(datos), organizacion_id: organizacionId })
+  return mapearTarjeta(respuesta.data.data)
+}
+
+/** PATCH /mi-plan/tarjetas/{id}/ (contrato 10.5): solo se envían los campos indicados. */
+export async function actualizarTarjeta(id: string, cambios: Partial<DatosTarjeta> & { predeterminada?: boolean }, organizacionId: string): Promise<Tarjeta> {
+  const respuesta = await clienteApi.patch<RespuestaApi<TarjetaApi>>(`/mi-plan/tarjetas/${id}/`, {
+    ...datosTarjetaApi(cambios),
+    predeterminada: cambios.predeterminada,
+    organizacion_id: organizacionId,
+  })
+  return mapearTarjeta(respuesta.data.data)
+}
+
+/** DELETE /mi-plan/tarjetas/{id}/ (contrato 10.5) */
+export async function eliminarTarjeta(id: string, organizacionId: string): Promise<void> {
+  await clienteApi.delete(`/mi-plan/tarjetas/${id}/`, { params: { organizacion_id: organizacionId } })
 }
 
 /** GET /mi-plan/facturas/ (contrato 10.4) */
