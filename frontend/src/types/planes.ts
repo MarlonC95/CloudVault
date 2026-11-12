@@ -35,3 +35,26 @@ export interface Factura {
   periodoFin: string
   urlPdf: string
 }
+export type TipoTarjeta = 'credito' | 'debito'
+
+/** Tarjeta guardada para el pago simulado: nunca incluye el número completo ni el CVV. */
+export interface Tarjeta {
+  id: string
+  titular: string
+  marca: string
+  tipo: TipoTarjeta
+  ultimos4: string
+  mesExpiracion: number
+  anioExpiracion: number
+  predeterminada: boolean
+}
+
+/** Datos del formulario; `numero` y `cvv` solo viajan al backend para validarse. */
+export interface DatosTarjeta {
+  titular: string
+  numero: string
+  cvv: string
+  mesExpiracion: number
+  anioExpiracion: number
+  tipo: TipoTarjeta
+}
