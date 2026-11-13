@@ -13,4 +13,5 @@ export interface UrlTemporal {
   expiraEn: string
   nombre?: string
   tipo?: string
+  contenidoTexto?: string
 }

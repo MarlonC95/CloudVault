@@ -36,6 +36,7 @@ interface UrlTemporalApi {
   url_vista_previa?: string
   nombre?: string
   tipo?: string
+  contenido_texto?: string
   expira_en: string
 }
 
@@ -105,6 +106,35 @@ export async function moverArchivo(archivoId: string, carpetaId: string | null, 
   await clienteApi.post(`/archivos/${archivoId}/mover/`, { carpeta_id: carpetaId }, { params: { organizacion_id: organizacionId } })
 }
 
+const MIME_POR_EXTENSION: Record<string, string> = {
+  md: 'text/plain',
+  markdown: 'text/plain',
+  txt: 'text/plain',
+  csv: 'text/csv',
+  json: 'application/json',
+  js: 'text/javascript',
+  ts: 'text/plain',
+  tsx: 'text/plain',
+  jsx: 'text/plain',
+  py: 'text/plain',
+  sql: 'text/plain',
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  mp4: 'video/mp4',
+  mp3: 'audio/mpeg',
+}
+
+function deducirMimeArchivo(archivo: File): string {
+  if (archivo.type && archivo.type !== 'application/octet-stream') return archivo.type
+  const ext = archivo.name.includes('.') ? archivo.name.split('.').pop()?.toLowerCase() ?? '' : ''
+  return MIME_POR_EXTENSION[ext] ?? 'application/octet-stream'
+}
+
 /** Paso 1 de la carga directa — POST /archivos/iniciar-carga/ (contrato 4.1). */
 export async function iniciarCarga(archivo: File, carpetaId: string | null, organizacionId: string | null): Promise<CargaIniciada> {
   const respuesta = await clienteApi.post<RespuestaApi<CargaIniciadaApi>>('/archivos/iniciar-carga/', {
@@ -112,7 +142,7 @@ export async function iniciarCarga(archivo: File, carpetaId: string | null, orga
     ...(organizacionId ? { organizacion_id: organizacionId } : {}),
     nombre: archivo.name,
     tamano_bytes: archivo.size,
-    tipo_mime: archivo.type || 'application/octet-stream',
+    tipo_mime: deducirMimeArchivo(archivo),
     carpeta_id: carpetaId,
   })
   const carga = respuesta.data.data
@@ -164,7 +194,13 @@ export async function subirArchivo(
 async function pedirUrlTemporal(ruta: string, campoUrl: 'url_descarga' | 'url_vista_previa'): Promise<UrlTemporal> {
   const respuesta = await clienteApi.get<RespuestaApi<UrlTemporalApi>>(ruta)
   const datos = respuesta.data.data
-  return { url: datos[campoUrl] ?? '', expiraEn: datos.expira_en, nombre: datos.nombre, tipo: datos.tipo }
+  return {
+    url: datos[campoUrl] ?? '',
+    expiraEn: datos.expira_en,
+    nombre: datos.nombre,
+    tipo: datos.tipo,
+    contenidoTexto: datos.contenido_texto,
+  }
 }
 
 /** GET /archivos/{id}/descarga/ (contrato 5.1) */

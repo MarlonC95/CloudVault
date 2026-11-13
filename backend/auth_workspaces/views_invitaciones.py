@@ -126,18 +126,28 @@ class InvitarMiembroView(BaseInvitacionesView):
 
 class InvitacionesEnviadasView(BaseInvitacionesView):
     def get(self, request, organizacion_id):
-        consulta = invitaciones.pendientes_enviadas(request.user, organizacion_id)
-        return self.paginar(request, consulta, lambda invitacion: {
-            **_fila(invitacion), "correo_electronico": invitacion.destinatario_usuario.correo_electronico,
-        })
+        try:
+            consulta = invitaciones.pendientes_enviadas(request.user, organizacion_id)
+            return self.paginar(request, consulta, lambda invitacion: {
+                **_fila(invitacion), "correo_electronico": invitacion.destinatario_usuario.correo_electronico,
+            })
+        except ProgrammingError as exc:
+            if getattr(exc.__cause__, "sqlstate", None) == "42P01":
+                return ok({"count": 0, "next": None, "previous": None, "results": []})
+            raise
 
 
 class InvitacionesRecibidasView(BaseInvitacionesView):
     def get(self, request):
         actor = _cuenta_vigente(request.user)
-        return self.paginar(request, invitaciones.pendientes_recibidas(actor.pk), lambda invitacion: {
-            **_fila(invitacion), "organizacion_nombre": invitacion.organizacion.nombre,
-        })
+        try:
+            return self.paginar(request, invitaciones.pendientes_recibidas(actor.pk), lambda invitacion: {
+                **_fila(invitacion), "organizacion_nombre": invitacion.organizacion.nombre,
+            })
+        except ProgrammingError as exc:
+            if getattr(exc.__cause__, "sqlstate", None) == "42P01":
+                return ok({"count": 0, "next": None, "previous": None, "results": []})
+            raise
 
 
 class DecisionInvitacionView(BaseInvitacionesView):

@@ -6,7 +6,7 @@ obtenidos por enlace (``enlace_id``) siguen las condiciones vigentes del enlace.
 
 from dataclasses import dataclass
 
-from django.db import connections
+from django.db import ProgrammingError, connections, transaction
 from django.db.models import Case, F, Q, UUIDField, When
 from django.db.models.expressions import RawSQL
 from django.utils import timezone
@@ -50,13 +50,24 @@ def acceso_usuario(usuario_id, *, archivo_id=None, carpeta_id=None, using="defau
         recurso = _recurso(cursor, archivo_id, carpeta_id)
         if recurso is None:
             return None
-        cursor.execute(CADENA + """
-            SELECT COALESCE(e.rol, p.tipo_permiso), COALESCE(e.permite_descarga, p.permite_descarga)
-            FROM permisos_recurso p LEFT JOIN enlaces_publicos e ON e.id = p.enlace_id
-            WHERE p.usuario_id = %s AND (p.carpeta_id IN (SELECT id FROM cadena) OR p.archivo_id = %s)
-              AND (e.id IS NULL OR e.fecha_expiracion IS NULL OR e.fecha_expiracion > now())""",
-                       [recurso[1], recurso[0], usuario_id, archivo_id])
-        filas = cursor.fetchall()
+        try:
+            with transaction.atomic(using=using):
+                cursor.execute(CADENA + """
+                    SELECT COALESCE(e.rol, p.tipo_permiso), COALESCE(e.permite_descarga, p.permite_descarga)
+                    FROM permisos_recurso p LEFT JOIN enlaces_publicos e ON e.id = p.enlace_id
+                    WHERE p.usuario_id = %s AND (p.carpeta_id IN (SELECT id FROM cadena) OR p.archivo_id = %s)
+                      AND (e.id IS NULL OR e.fecha_expiracion IS NULL OR e.fecha_expiracion > now())""",
+                               [recurso[1], recurso[0], usuario_id, archivo_id])
+                filas = cursor.fetchall()
+        except ProgrammingError as exc:
+            if getattr(exc.__cause__, "sqlstate", None) != "42703":
+                raise
+            cursor.execute(CADENA + """
+                SELECT p.tipo_permiso, TRUE
+                FROM permisos_recurso p
+                WHERE p.usuario_id = %s AND (p.carpeta_id IN (SELECT id FROM cadena) OR p.archivo_id = %s)""",
+                           [recurso[1], recurso[0], usuario_id, archivo_id])
+            filas = cursor.fetchall()
     if not filas:
         return None
     escritura = any(rol == ESCRITURA for rol, _ in filas)

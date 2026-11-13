@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MoreVertical, Download, Eye, Users, Trash2, FolderInput } from 'lucide-react'
 import { obtenerConfiguracionTipoArchivo } from '../../utils/tiposArchivo'
 import type { Archivo } from '../../types/archivo'
@@ -36,6 +36,7 @@ const ESTILO_ITEM_MENU: React.CSSProperties = {
   border: 'none',
   cursor: 'pointer',
   fontSize: 13,
+  fontWeight: 500,
   color: '#374151',
   textAlign: 'left',
   whiteSpace: 'nowrap',
@@ -53,9 +54,36 @@ function TablaArchivos({
   titulo = 'TODOS LOS ARCHIVOS',
 }: TablaArchivosProps) {
   const [menuAbiertoId, setMenuAbiertoId] = useState<string | null>(null)
+  const contenedorTablaRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuAbiertoId) return
+    function manejarClickFuera(evento: MouseEvent) {
+      if (contenedorTablaRef.current && !contenedorTablaRef.current.contains(evento.target as Node)) {
+        setMenuAbiertoId(null)
+      }
+    }
+    function manejarEscape(evento: KeyboardEvent) {
+      if (evento.key === 'Escape') setMenuAbiertoId(null)
+    }
+    document.addEventListener('mousedown', manejarClickFuera)
+    document.addEventListener('keydown', manejarEscape)
+    return () => {
+      document.removeEventListener('mousedown', manejarClickFuera)
+      document.removeEventListener('keydown', manejarEscape)
+    }
+  }, [menuAbiertoId])
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden' }}>
+    <div
+      ref={contenedorTablaRef}
+      style={{
+        background: '#fff',
+        border: '1px solid #E2E8F0',
+        borderRadius: 12,
+        position: 'relative',
+      }}
+    >
       <div
         style={{
           display: 'flex',
@@ -63,12 +91,15 @@ function TablaArchivos({
           justifyContent: 'space-between',
           padding: '14px 18px',
           borderBottom: '1px solid #F1F5F9',
+          borderRadius: '12px 12px 0 0',
         }}
       >
         <p style={{ fontSize: 11, fontWeight: 700, color: '#64748B', letterSpacing: '0.07em', margin: 0 }}>
           {titulo}
         </p>
-        <span style={{ fontSize: 12, color: '#94A3B8' }}>{archivos.length} archivo{archivos.length === 1 ? '' : 's'}</span>
+        <span style={{ fontSize: 12, color: '#94A3B8' }}>
+          {archivos.length} archivo{archivos.length === 1 ? '' : 's'}
+        </span>
       </div>
 
       {archivos.length === 0 ? (
@@ -79,24 +110,28 @@ function TablaArchivos({
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid #F1F5F9' }}>
-              <th style={{ ...ESTILO_TH, width: '44%' }}>NOMBRE</th>
+              <th style={{ ...ESTILO_TH, width: '42%' }}>NOMBRE</th>
               <th style={ESTILO_TH}>FECHA DE MODIFICACIÓN</th>
               <th style={ESTILO_TH}>TAMAÑO</th>
               <th style={{ ...ESTILO_TH, textAlign: 'right' }}>ACCIONES</th>
             </tr>
           </thead>
           <tbody>
-            {archivos.map((archivo) => {
+            {archivos.map((archivo, indice) => {
               const configuracion = obtenerConfiguracionTipoArchivo(archivo.tipo)
               const estaSeleccionado = archivo.id === archivoSeleccionadoId
               const menuAbierto = menuAbiertoId === archivo.id
+              const esUltimaFila = indice === archivos.length - 1
 
               return (
                 <tr
                   key={archivo.id}
                   onClick={() => onSeleccionarArchivo(archivo)}
+                  onDoubleClick={() => {
+                    if (onVistaPrevia) onVistaPrevia(archivo)
+                  }}
                   style={{
-                    borderBottom: '1px solid #F8FAFC',
+                    borderBottom: esUltimaFila ? 'none' : '1px solid #F8FAFC',
                     background: estaSeleccionado ? 'rgba(37,99,235,0.04)' : 'transparent',
                     cursor: 'pointer',
                   }}
@@ -145,9 +180,40 @@ function TablaArchivos({
                   </td>
                   <td style={{ padding: '12px 14px' }}>
                     <div
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, position: 'relative' }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        gap: 6,
+                        position: 'relative',
+                      }}
                       onClick={(evento) => evento.stopPropagation()}
                     >
+                      {onVistaPrevia && (
+                        <button
+                          type="button"
+                          onClick={() => onVistaPrevia(archivo)}
+                          title={`Vista previa de ${archivo.nombre}`}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '6px 10px',
+                            background: '#F8FAFC',
+                            border: '1px solid #E2E8F0',
+                            borderRadius: 7,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: '#334155',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <Eye size={13} strokeWidth={2} />
+                          Ver
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => onDescargar(archivo)}
@@ -181,8 +247,8 @@ function TablaArchivos({
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          background: 'transparent',
-                          border: '1px solid #E2E8F0',
+                          background: menuAbierto ? '#F1F5F9' : 'transparent',
+                          border: menuAbierto ? '1px solid #CBD5E1' : '1px solid #E2E8F0',
                           borderRadius: 7,
                           cursor: 'pointer',
                           color: '#64748B',
@@ -196,16 +262,17 @@ function TablaArchivos({
                           style={{
                             position: 'absolute',
                             right: 0,
-                            top: 'calc(100% + 4px)',
-                            background: '#fff',
+                            top: 'calc(100% + 6px)',
+                            background: '#FFFFFF',
                             border: '1px solid #E2E8F0',
-                            borderRadius: 9,
-                            boxShadow: '0 4px 16px rgba(15,23,42,0.10)',
-                            zIndex: 60,
+                            borderRadius: 10,
+                            boxShadow: '0 10px 28px rgba(15, 23, 42, 0.14)',
+                            zIndex: 80,
                             overflow: 'hidden',
-                            width: 190,
+                            width: 196,
                             display: 'flex',
                             flexDirection: 'column',
+                            padding: '4px 0',
                           }}
                         >
                           <button
@@ -220,7 +287,17 @@ function TablaArchivos({
                             }}
                             style={ESTILO_ITEM_MENU}
                           >
-                            <Eye size={13} strokeWidth={1.9} /> Vista previa
+                            <Eye size={14} strokeWidth={1.9} color="#2563EB" /> Vista previa
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onDescargar(archivo)
+                              setMenuAbiertoId(null)
+                            }}
+                            style={ESTILO_ITEM_MENU}
+                          >
+                            <Download size={14} strokeWidth={1.9} color="#475569" /> Descargar
                           </button>
                           {onCompartir && (
                             <button
@@ -231,7 +308,7 @@ function TablaArchivos({
                               }}
                               style={ESTILO_ITEM_MENU}
                             >
-                              <Users size={13} strokeWidth={1.9} /> Compartir
+                              <Users size={14} strokeWidth={1.9} color="#475569" /> Compartir
                             </button>
                           )}
                           <button
@@ -242,8 +319,9 @@ function TablaArchivos({
                             }}
                             style={ESTILO_ITEM_MENU}
                           >
-                            <FolderInput size={13} strokeWidth={1.9} /> Mover a carpeta
+                            <FolderInput size={14} strokeWidth={1.9} color="#475569" /> Mover a carpeta
                           </button>
+                          <div style={{ height: 1, background: '#F1F5F9', margin: '3px 0' }} />
                           <button
                             type="button"
                             onClick={() => {
@@ -252,7 +330,7 @@ function TablaArchivos({
                             }}
                             style={{ ...ESTILO_ITEM_MENU, color: '#DC2626' }}
                           >
-                            <Trash2 size={13} strokeWidth={1.9} /> Eliminar
+                            <Trash2 size={14} strokeWidth={1.9} /> Eliminar
                           </button>
                         </div>
                       )}

@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, UsersRound } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Cloud, Upload, HardDrive, Users, Clock, Trash2, Zap, UsersRound, Shield } from 'lucide-react'
 import { cerrarSesionEnServidor, obtenerSesion } from '../../services/authService'
 import { useOrganizacion } from '../../context/organizacionesContexto'
 import { useArchivos } from '../../context/archivosContexto'
@@ -17,6 +17,7 @@ export type SeccionExplorador =
   | 'papelera'
   | 'planes'
   | 'miembros'
+  | 'administracion'
 
 interface ElementoMenu {
   id: SeccionExplorador
@@ -35,6 +36,7 @@ const ELEMENTOS_GESTION: ElementoMenu[] = [
   { id: 'papelera', etiqueta: 'Papelera', icono: <Trash2 size={18} />, ruta: '/papelera' },
   { id: 'planes', etiqueta: 'Planes', icono: <Zap size={18} />, ruta: '/planes' },
   { id: 'miembros', etiqueta: 'Miembros', icono: <UsersRound size={18} />, ruta: '/organizacion/miembros' },
+  { id: 'administracion', etiqueta: 'Administración', icono: <Shield size={18} />, ruta: '/administracion' },
 ]
 
 interface DashboardLayoutProps {
@@ -109,10 +111,14 @@ function DashboardLayout({ seccionActiva, onClickSubirArchivo, children }: Dashb
         className="d-none d-lg-flex flex-column p-3 text-white flex-shrink-0"
         style={{ width: '260px', height: '100%', backgroundColor: COLOR_NAVY, overflowY: 'auto' }}
       >
-        <div className="d-flex align-items-center gap-2 mb-4 px-2">
+        <Link
+          to="/"
+          title="Ver página de inicio (Landing Page)"
+          className="d-flex align-items-center gap-2 mb-4 px-2 text-decoration-none text-white"
+        >
           <Cloud size={26} color={COLOR_MARCA} />
           <span className="fw-bold fs-5">CloudVault PaaS</span>
-        </div>
+        </Link>
 
         <button
           type="button"

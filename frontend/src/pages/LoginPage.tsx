@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Cloud, Mail, Lock, Eye, EyeOff, ChevronRight } from 'lucide-react'
+import { Cloud, Mail, Lock, Eye, EyeOff, ChevronRight, ArrowLeft } from 'lucide-react'
 import { ErrorLogin, iniciarSesion } from '../services/authService'
 import { destinoTrasLogin } from '../utils/redireccion'
 
@@ -83,6 +83,13 @@ function LoginPage() {
         {/* Columna del formulario */}
         <div className="p-4 p-md-5 flex-grow-1" style={{ minWidth: 0 }}>
           <div className="mx-auto w-100" style={{ maxWidth: '360px' }}>
+            <Link
+              to="/"
+              className="d-inline-flex align-items-center gap-1 small fw-semibold text-decoration-none mb-3"
+              style={{ color: COLOR_MARCA }}
+            >
+              <ArrowLeft size={15} /> Volver al inicio
+            </Link>
             <h2 className="fw-bold mb-1">¡Hola de nuevo!</h2>
             <p className="text-secondary mb-4">Inicia sesión en tu cuenta</p>
 

@@ -3,6 +3,11 @@ import type { OrganizacionDisponible } from '../services/organizacionesService'
 
 export interface OrganizacionesContextoValor {
   organizacion: OrganizacionDisponible
+  organizaciones: OrganizacionDisponible[]
+  seleccionarOrganizacion: (id: string) => void
+  recargarOrganizaciones: () => Promise<void>
+  abrirCrearOrganizacion: () => void
+  ocupadoOrganizacion: boolean
   comprobarSeleccion: () => Promise<boolean>
   ejecutar: <T>(accion: () => Promise<T>) => Promise<T>
 }

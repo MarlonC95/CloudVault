@@ -58,3 +58,10 @@ export interface DatosTarjeta {
   anioExpiracion: number
   tipo: TipoTarjeta
 }
+
+/** Respuesta de POST /mi-plan/suscribir/ con el plan ya aplicado. */
+export interface ResultadoSuscripcion {
+  plan: { id: string; nombre: string; tipoFacturacion: TipoFacturacion }
+  estado: string
+  renuevaEn: string
+}

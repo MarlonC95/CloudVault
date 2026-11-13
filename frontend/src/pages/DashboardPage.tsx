@@ -20,6 +20,7 @@ import NotificacionCargas from '../components/dashboard/NotificacionCargas'
 import ModalSubirArchivo from '../components/dashboard/ModalSubirArchivo'
 import ModalCompartir from '../components/dashboard/ModalCompartir'
 import ModalMoverArchivo from '../components/dashboard/ModalMoverArchivo'
+import ModalVistaPrevia from '../components/dashboard/ModalVistaPrevia'
 
 type FiltroTipo = TipoArchivo | 'todos'
 
@@ -47,6 +48,12 @@ function DashboardPage() {
   const compartirArchivo = (archivo: Archivo) =>
     setRecursoParaCompartir({ tipo: 'archivo', id: archivo.id, nombre: archivo.nombre })
   const [archivoParaMover, setArchivoParaMover] = useState<Archivo | null>(null)
+  const [archivoVistaPrevia, setArchivoVistaPrevia] = useState<Archivo | null>(null)
+  const [urlVistaPrevia, setUrlVistaPrevia] = useState<string | null>(null)
+  const [mimeVistaPrevia, setMimeVistaPrevia] = useState<string | null>(null)
+  const [textoVistaPrevia, setTextoVistaPrevia] = useState<string | null>(null)
+  const [cargandoVistaPrevia, setCargandoVistaPrevia] = useState(false)
+  const [errorVistaPrevia, setErrorVistaPrevia] = useState<string | null>(null)
   const [mostrarModalSubida, setMostrarModalSubida] = useState(debeAbrirSubida)
   const [mostrarModalNuevaCarpeta, setMostrarModalNuevaCarpeta] = useState(false)
   const [cargas, setCargas] = useState<CargaEnProgreso[]>([])
@@ -83,19 +90,26 @@ function DashboardPage() {
 
   async function manejarVistaPrevia(archivo: Archivo) {
     setErrorAccion(null)
-    const pestana = window.open('about:blank', '_blank')
+    setArchivoVistaPrevia(archivo)
+    setUrlVistaPrevia(null)
+    setMimeVistaPrevia(null)
+    setTextoVistaPrevia(null)
+    setErrorVistaPrevia(null)
+    setCargandoVistaPrevia(true)
     try {
       const vistaPrevia = await ejecutar(() => obtenerUrlVistaPrevia(archivo.id))
       if (!vistaPrevia.url) throw new Error('La API no devolvió una URL de vista previa.')
-      if (pestana) {
-        pestana.opener = null
-        pestana.location.href = vistaPrevia.url
-      } else {
-        window.location.assign(vistaPrevia.url)
-      }
+      setUrlVistaPrevia(vistaPrevia.url)
+      setMimeVistaPrevia(vistaPrevia.tipo ?? null)
+      setTextoVistaPrevia(vistaPrevia.contenidoTexto ?? null)
     } catch (causa) {
-      pestana?.close()
-      setErrorAccion(causa instanceof Error && causa.message.startsWith('La API') ? causa.message : convertirEnErrorApi(causa).message)
+      setErrorVistaPrevia(
+        causa instanceof Error && causa.message.startsWith('La API')
+          ? causa.message
+          : convertirEnErrorApi(causa).message,
+      )
+    } finally {
+      setCargandoVistaPrevia(false)
     }
   }
 
@@ -266,6 +280,17 @@ function DashboardPage() {
         visible={mostrarModalNuevaCarpeta}
         onCerrar={() => setMostrarModalNuevaCarpeta(false)}
         onCrear={manejarCrearCarpeta}
+      />
+
+      <ModalVistaPrevia
+        archivo={archivoVistaPrevia}
+        urlVistaPrevia={urlVistaPrevia}
+        tipoMime={mimeVistaPrevia}
+        contenidoTexto={textoVistaPrevia}
+        cargando={cargandoVistaPrevia}
+        error={errorVistaPrevia}
+        onCerrar={() => setArchivoVistaPrevia(null)}
+        onDescargar={manejarDescargar}
       />
     </DashboardLayout>
   )

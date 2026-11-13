@@ -92,7 +92,7 @@ export default function MiembrosPage() {
   }
 
   return (
-    <DashboardLayout seccionActiva="administracion">
+    <DashboardLayout seccionActiva="miembros">
       <section className="container-fluid p-3 p-md-4" aria-labelledby="titulo-miembros">
         <Link className="d-lg-none small d-inline-block mb-3" to="/dashboard">Volver a archivos</Link>
         <h1 className="h3 mb-1" id="titulo-miembros">Administración de miembros</h1>

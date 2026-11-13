@@ -166,10 +166,16 @@ class ClienteS3:
                             self.politica.vigencia_carga_segundos if vigencia is None else vigencia,
                             self.politica.vigencia_carga_segundos, mime=tipo_mime)
 
-    def firmar_get(self, clave, *, vigencia=None):
+    def firmar_get(self, clave, *, vigencia=None, tipo_mime=None, disposicion=None):
+        respuesta = {}
+        if disposicion:
+            respuesta["ResponseContentDisposition"] = disposicion
+        if tipo_mime and isinstance(tipo_mime, str) and len(tipo_mime) <= 100 and re.fullmatch(MIME_PATRON, tipo_mime):
+            respuesta["ResponseContentType"] = tipo_mime
         return self._firmar("get_object", clave,
                             self.politica.vigencia_descarga_segundos if vigencia is None else vigencia,
-                            self.politica.vigencia_descarga_segundos)
+                            self.politica.vigencia_descarga_segundos,
+                            respuesta=respuesta or None)
 
     def firmar_descarga(self, clave, nombre, *, vigencia=None, version=None):
         _clave(clave, propia=True)

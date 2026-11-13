@@ -1,3 +1,10 @@
 body {
   font-family: 'Inter', -apple-system, sans-serif;
 }
+
+/* Giro de los íconos de carga (Loader2) */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

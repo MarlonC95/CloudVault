@@ -7,6 +7,7 @@
 """
 
 import ipaddress
+import mimetypes
 import secrets
 from datetime import timedelta
 from hashlib import sha256
@@ -15,7 +16,7 @@ from uuid import UUID
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core import signing
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, ProgrammingError, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, ValidationError
@@ -149,17 +150,113 @@ def _contenido(carpeta_id):
                           "tipo_mime": a.tipo_mime, "fecha_modificacion": a.actualizado_en} for a in archivos]}
 
 
+_MIME_POR_EXTENSION = {
+    "md": "text/plain",
+    "markdown": "text/plain",
+    "txt": "text/plain",
+    "log": "text/plain",
+    "csv": "text/plain",
+    "json": "application/json",
+    "js": "text/plain",
+    "jsx": "text/plain",
+    "ts": "text/plain",
+    "tsx": "text/plain",
+    "py": "text/plain",
+    "sql": "text/plain",
+    "xml": "text/xml",
+    "html": "text/html",
+    "css": "text/css",
+    "pdf": "application/pdf",
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "svg": "image/svg+xml",
+    "mp4": "video/mp4",
+    "webm": "video/webm",
+    "mp3": "audio/mpeg",
+    "wav": "audio/wav",
+}
+
+_EXTENSIONES_TEXTO = {
+    "md", "markdown", "txt", "log", "csv", "json", "js", "jsx", "ts", "tsx",
+    "py", "sql", "xml", "html", "css", "yml", "yaml", "ini", "env", "sh",
+}
+
+
+def _mime_vista_previa(nombre, tipo_mime):
+    ext = (nombre or "").rsplit(".", 1)[-1].lower() if "." in (nombre or "") else ""
+    if ext in _MIME_POR_EXTENSION:
+        return _MIME_POR_EXTENSION[ext]
+    if tipo_mime and tipo_mime not in ("application/octet-stream", "binary/octet-stream", "text/markdown"):
+        return tipo_mime
+    adivinado, _ = mimetypes.guess_type(nombre or "")
+    if adivinado == "text/markdown":
+        return "text/plain"
+    return adivinado or tipo_mime or "application/octet-stream"
+
+
+def _intentar_leer_texto_s3(cliente, archivo, mime_efectivo):
+    ext = (archivo.nombre or "").rsplit(".", 1)[-1].lower() if "." in (archivo.nombre or "") else ""
+    es_candidato_texto = (
+        ext in _EXTENSIONES_TEXTO
+        or (mime_efectivo or "").startswith("text/")
+        or mime_efectivo == "application/json"
+        or (mime_efectivo == "application/octet-stream" and (archivo.tamano_bytes or 0) <= 262144)
+    )
+    if not es_candidato_texto or (archivo.tamano_bytes or 0) > 524288 or (archivo.tamano_bytes or 0) == 0:
+        return None
+    if not hasattr(cliente, "_operar"):
+        return None
+    try:
+        respuesta = cliente._operar("get_object", Key=archivo.clave_s3, Range="bytes=0-262143")
+        stream = respuesta.get("Body")
+        if stream is None:
+            return None
+        try:
+            crudo = stream.read(262144)
+        finally:
+            stream.close()
+        if b"\x00" in crudo:
+            return None
+        return crudo.decode("utf-8")
+    except Exception:
+        return None
+
+
 def _url_temporal(archivo, *, descargar):
     cliente = cliente_firmador()
+    mime_efectivo = _mime_vista_previa(archivo.nombre, archivo.tipo_mime)
+    contenido_texto = None
     try:
-        firma = (cliente.firmar_descarga(archivo.clave_s3, archivo.nombre) if descargar
-                 else cliente.firmar_get(archivo.clave_s3))
+        if descargar:
+            firma = cliente.firmar_descarga(archivo.clave_s3, archivo.nombre)
+        else:
+            try:
+                firma = cliente.firmar_get(
+                    archivo.clave_s3,
+                    tipo_mime=mime_efectivo,
+                    disposicion="inline",
+                )
+            except TypeError:
+                firma = cliente.firmar_get(archivo.clave_s3)
+            contenido_texto = _intentar_leer_texto_s3(cliente, archivo, mime_efectivo)
+            if contenido_texto is not None and mime_efectivo == "application/octet-stream":
+                mime_efectivo = "text/plain"
     except ValueError:  # clave o nombre no firmables
         raise ErrorCarga(CodigoError.SERVICE_UNAVAILABLE) from None
     finally:
         cliente.cerrar()
-    return {"url_descarga" if descargar else "url_vista_previa": firma.url, "expira_en": firma.expira_en,
-            "nombre": archivo.nombre, "tipo": archivo.tipo_mime}
+    datos = {
+        "url_descarga" if descargar else "url_vista_previa": firma.url,
+        "expira_en": firma.expira_en,
+        "nombre": archivo.nombre,
+        "tipo": archivo.tipo_mime if descargar else mime_efectivo,
+    }
+    if contenido_texto is not None:
+        datos["contenido_texto"] = contenido_texto
+    return datos
 
 
 def _puede_subir(usuario, carpeta_id):
@@ -312,8 +409,37 @@ class PermisoDetalleView(Base):
 class CompartidosView(Base):
     def get(self, request):
         items = []
-        permisos = (PermisoRecurso.objects.select_related("archivo", "carpeta", "enlace")
-                    .filter(usuario_id=request.user.pk).order_by("-fecha_creacion"))
+        try:
+            with transaction.atomic():
+                permisos = list(
+                    PermisoRecurso.objects.select_related("archivo", "carpeta", "enlace")
+                    .filter(usuario_id=request.user.pk)
+                    .order_by("-fecha_creacion")
+                )
+        except ProgrammingError as exc:
+            if getattr(exc.__cause__, "sqlstate", None) != "42703":
+                raise
+            permisos_legados = (
+                PermisoRecurso.objects.select_related("archivo", "carpeta")
+                .only("id", "archivo", "carpeta", "usuario_id", "tipo_permiso")
+                .filter(usuario_id=request.user.pk)
+                .order_by("-id")
+            )
+            for p in permisos_legados:
+                recurso = p.archivo or p.carpeta
+                if recurso is None or recurso.en_papelera:
+                    continue
+                es_archivo = isinstance(recurso, Archivo)
+                items.append({
+                    "tipo": "archivo" if es_archivo else "carpeta",
+                    "id": recurso.pk,
+                    "nombre": recurso.nombre,
+                    "rol": p.tipo_permiso,
+                    "permite_descarga": True,
+                    "tamano_bytes": recurso.tamano_bytes if es_archivo else None,
+                    "tipo_mime": recurso.tipo_mime if es_archivo else None,
+                })
+            return ok(items)
         for p in permisos:
             efectivo, recurso = _efectivo(p), p.archivo or p.carpeta
             if efectivo is None or recurso.en_papelera:

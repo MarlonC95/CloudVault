@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { HardDrive, CheckCircle, Check, ChevronRight, X, Loader2, CreditCard } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import ModalPago from '../components/planes/ModalPago'
@@ -45,6 +46,7 @@ function construirAccion(planId: string, planActualId: string): { etiqueta: stri
 }
 
 function PlanesPage() {
+  const navigate = useNavigate()
   const { organizacion, ejecutar } = useOrganizacion()
   const [facturacion, setFacturacion] = useState<TipoFacturacion>('mensual')
   const [planes, setPlanes] = useState<Plan[]>([])
@@ -124,9 +126,9 @@ function PlanesPage() {
     if (plan.id === miPlan?.plan.id) return
     setErrorGeneral('')
     setAviso('')
-    // Los planes de pago no cambian directo: primero el pago simulado con tarjeta.
+    // Los planes de pago pasan primero por la pantalla de pago simulado.
     if (montoDe(plan) > 0) {
-      setPlanACobrar(plan)
+      navigate(`/planes/pago?plan=${encodeURIComponent(plan.id)}&facturacion=${facturacion}`)
       return
     }
     setSuscribiendoPlanId(plan.id)
