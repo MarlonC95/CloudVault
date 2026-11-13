@@ -6,6 +6,7 @@ código a partir del id entero del seed, sin inventar columnas.
 """
 
 import calendar
+import re
 import secrets
 from datetime import timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
@@ -68,7 +69,7 @@ def plan_id_desde_codigo(codigo):
         limpio = codigo.strip()
         if limpio in IDS_PUBLICOS:
             return IDS_PUBLICOS[limpio]
-        if limpio.isdigit():
+        if limpio.isascii() and limpio.isdigit():
             entero = int(limpio)
             return entero if entero in CODIGOS_PUBLICOS else None
     return None
@@ -187,4 +188,121 @@ def factura_publica(pago):
         "periodo_inicio": fecha_iso(periodo_inicio),
         "periodo_fin": fecha_iso(periodo_fin),
         "url_pdf": f"https://cloudvault.app/facturas/{referencia}.pdf",
+    }
+
+
+# --- Tarjetas de pago simulado ---------------------------------------------
+
+MAX_TARJETAS = 2
+_TIPOS_TARJETA = {"credito": "CREDITO", "debito": "DEBITO"}
+_VIGENCIA_MAXIMA_ANIOS = 20
+
+
+def luhn_valido(numero):
+    """Dígito verificador de Luhn (el que usan todas las tarjetas reales)."""
+    total = 0
+    for posicion, digito in enumerate(reversed(numero)):
+        valor = int(digito)
+        if posicion % 2:
+            valor = valor * 2 - 9 if valor > 4 else valor * 2
+        total += valor
+    return total % 10 == 0
+
+
+def marca_tarjeta(numero):
+    """Marca por prefijo (IIN); ``otra`` si no es Visa, Mastercard ni Amex."""
+    if numero.startswith("4"):
+        return "visa"
+    if numero[:2] in ("34", "37"):
+        return "amex"
+    if 51 <= int(numero[:2]) <= 55 or 2221 <= int(numero[:4]) <= 2720:
+        return "mastercard"
+    return "otra"
+
+
+def tarjeta_vencida(mes, anio, hoy):
+    return (anio, mes) < (hoy.year, hoy.month)
+
+
+def _entero(valor):
+    if isinstance(valor, bool):
+        return None
+    if isinstance(valor, int):
+        return valor
+    if isinstance(valor, str) and valor.strip().isascii() and valor.strip().isdigit():
+        return int(valor.strip())
+    return None
+
+
+def validar_tarjeta(datos, hoy, actual=None):
+    """Valida el alta (``actual=None``) o la edición parcial de una tarjeta.
+
+    Devuelve ``(limpio, errores)``. ``limpio`` solo contiene columnas guardables:
+    del número quedan la marca y los 4 últimos dígitos; el CVV solo se comprueba.
+    """
+    limpio, errores = {}, {}
+
+    def presente(campo):
+        return actual is None or campo in datos
+
+    if presente("titular"):
+        titular_raw = datos.get("titular")
+        titular = " ".join(titular_raw.split()) if isinstance(titular_raw, str) else ""
+        if 2 <= len(titular) <= 100:
+            limpio["titular"] = titular
+        else:
+            errores["titular"] = ["Indica el nombre del titular como aparece en la tarjeta."]
+
+    if presente("tipo"):
+        tipo_raw = datos.get("tipo")
+        tipo = _TIPOS_TARJETA.get(tipo_raw) if isinstance(tipo_raw, str) else None
+        if tipo:
+            limpio["tipo"] = tipo
+        else:
+            errores["tipo"] = ["El tipo debe ser 'credito' o 'debito'."]
+
+    if presente("numero") or presente("cvv"):
+        numero_raw = datos.get("numero")
+        numero = re.sub(r"[\s-]", "", numero_raw) if isinstance(numero_raw, str) else ""
+        marca = None
+        if numero.isascii() and numero.isdigit() and 13 <= len(numero) <= 19 and luhn_valido(numero):
+            marca = marca_tarjeta(numero)
+            limpio["marca"] = marca
+            limpio["ultimos4"] = numero[-4:]
+        else:
+            errores["numero"] = ["El número de tarjeta no es válido."]
+        cvv_raw = datos.get("cvv")
+        cvv = cvv_raw if isinstance(cvv_raw, str) else ""
+        largos = (4,) if marca == "amex" else (3,) if marca else (3, 4)
+        if not (cvv.isascii() and cvv.isdigit() and len(cvv) in largos):
+            errores["cvv"] = ["El CVV no es válido."]
+
+    if presente("mes_expiracion") or presente("anio_expiracion"):
+        mes = _entero(datos.get("mes_expiracion", getattr(actual, "mes_expiracion", None)))
+        anio = _entero(datos.get("anio_expiracion", getattr(actual, "anio_expiracion", None)))
+        if mes is None or not 1 <= mes <= 12:
+            errores["mes_expiracion"] = ["El mes de expiración debe estar entre 1 y 12."]
+        elif (
+            anio is None
+            or tarjeta_vencida(mes, anio, hoy)
+            or anio > hoy.year + _VIGENCIA_MAXIMA_ANIOS
+        ):
+            errores["anio_expiracion"] = ["La tarjeta está vencida o la fecha no es válida."]
+        else:
+            limpio["mes_expiracion"] = mes
+            limpio["anio_expiracion"] = anio
+
+    return limpio, errores
+
+
+def tarjeta_publica(tarjeta):
+    return {
+        "id": str(tarjeta.id),
+        "titular": tarjeta.titular,
+        "marca": tarjeta.marca,
+        "tipo": tarjeta.tipo.lower(),
+        "ultimos4": tarjeta.ultimos4,
+        "mes_expiracion": tarjeta.mes_expiracion,
+        "anio_expiracion": tarjeta.anio_expiracion,
+        "predeterminada": tarjeta.predeterminada,
     }

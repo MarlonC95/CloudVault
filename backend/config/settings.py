@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import timedelta
 
 import environ
+from corsheaders.defaults import default_headers
 from django.core.exceptions import ImproperlyConfigured
 
 
@@ -47,6 +48,7 @@ CORS_ALLOWED_ORIGINS = env.list(
 )
 CORS_URLS_REGEX = r"^/api/"
 CORS_ALLOW_CREDENTIALS = False
+CORS_ALLOW_HEADERS = (*default_headers, "x-share-token")
 
 ROOT_URLCONF = "config.urls"
 # Solo habilitar después de integrar apps/modelos de negocio compatibles.

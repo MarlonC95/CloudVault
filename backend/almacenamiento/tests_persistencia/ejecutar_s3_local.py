@@ -59,7 +59,7 @@ def main():
         return subprocess.run([docker, *argumentos], check=True, capture_output=True,
                               text=True, env=entorno, timeout=30).stdout.strip()
 
-    with TemporaryDirectory(prefix="cv-fase08-minio-", dir="/private/tmp") as temporal:
+    with TemporaryDirectory(prefix="cv-fase08-minio-") as temporal:
         datos = Path(temporal) / "datos"
         informes = Path(temporal) / "informes"
         datos.mkdir()

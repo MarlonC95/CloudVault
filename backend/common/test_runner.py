@@ -15,7 +15,10 @@ from django.db import connections
 from django.test.runner import DiscoverRunner
 
 
-SCRIPTS_POSTERIORES = ("compartir.sql",)
+SCRIPTS_POSTERIORES = ("compartir.sql", "metodos_pago.sql")
+# Suites que usan esta BD. Las demás (almacenamiento.tests, *_sin_bd, tests_persistencia)
+# llevan su propio --settings o runner; mezclarlas aquí produce errores falsos.
+ETIQUETAS_BD = ("auth_workspaces.tests", "storage.tests", "subscriptions.tests", "compartir.tests", "common")
 
 
 def _leer(nombre):
@@ -23,6 +26,9 @@ def _leer(nombre):
 
 
 class CloudVaultTestRunner(DiscoverRunner):
+    def build_suite(self, test_labels=None, **kwargs):
+        return super().build_suite(test_labels or ETIQUETAS_BD, **kwargs)
+
     def setup_databases(self, **kwargs):
         db_settings = settings.DATABASES["default"]
         test_name = db_settings.get("TEST", {}).get("NAME")

@@ -8,7 +8,6 @@ import DashboardPage from '../pages/DashboardPage'
 import PapeleraPage from '../pages/PapeleraPage'
 import ProfilePage from '../pages/ProfilePage'
 import PlanesPage from '../pages/PlanesPage'
-import InvitacionesPage from '../pages/InvitacionesPage'
 import MiembrosPage from '../pages/MiembrosPage'
 import CompartidosPage from '../pages/CompartidosPage'
 import EnlacePublicoPage from '../pages/EnlacePublicoPage'
@@ -26,10 +25,6 @@ function RutaProtegida() {
   )
 }
 
-function RutaInvitaciones() {
-  return obtenerSesion() ? <InvitacionesPage /> : <Navigate to="/login" replace />
-}
-
 function RutaPublica() {
   return obtenerSesion() ? <Navigate to="/dashboard" replace /> : <Outlet />
 }
@@ -43,18 +38,19 @@ function AppRouter() {
           <Route path="/registro" element={<RegisterPage />} />
           <Route path="/recuperar" element={<RecoverPasswordPage />} />
         </Route>
-        <Route path="/invitaciones" element={<RutaInvitaciones />} />
         <Route element={<RutaProtegida />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/papelera" element={<PapeleraPage />} />
           <Route path="/perfil" element={<ProfilePage />} />
           <Route path="/planes" element={<PlanesPage />} />
+          <Route path="/administracion" element={<MiembrosPage />} />
           <Route path="/organizacion/miembros" element={<MiembrosPage />} />
           <Route path="/compartidos" element={<CompartidosPage />} />
         </Route>
         {/* Fuera de ambas guardas: el enlace se abre con o sin sesión. */}
         <Route path="/s/:token" element={<EnlacePublicoPage />} />
         <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
   )

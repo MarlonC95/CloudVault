@@ -11,8 +11,8 @@ from almacenamiento.integracion import (
     ArchivoVerificado, CuotaVigente, DestinoAutorizado, InspeccionObjetoTecnico,
 )
 from almacenamiento.persistencia import RepositorioCargas
-from common.ambito import Ambito, NIVELES_ESCRITURA
-from compartir.acceso import acceso_usuario, es_compartida, exigir_edicion
+from common.ambito import NIVELES_ESCRITURA
+from compartir.acceso import acceso_usuario
 from compartir.models import ESCRITURA
 from subscriptions.cuotas import CONSULTA_CUOTA, SinSuscripcionVigente, leer_cuota_organizacion
 
@@ -52,24 +52,15 @@ class ProveedorStorage:
             if carpeta_id is None:
                 cursor.execute("SELECT organizacion_id, nivel_rol FROM miembros_organizacion WHERE usuario_id = %s", [solicitante_id])
             else:
-                cursor.execute("""SELECT m.organizacion_id, m.nivel_rol, o.tipo FROM miembros_organizacion m
+                cursor.execute("""SELECT m.organizacion_id, m.nivel_rol FROM miembros_organizacion m
                     JOIN carpetas c ON c.organizacion_id = m.organizacion_id
-                    JOIN organizaciones o ON o.id = c.organizacion_id
                     WHERE m.usuario_id = %s AND c.id = %s AND NOT c.en_papelera""", [solicitante_id, carpeta_id])
             filas = cursor.fetchall()
         if len(filas) > 1:
             raise ErrorCarga(CodigoError.VALIDATION_ERROR)
-        if filas:
-            ambito = Ambito(*filas[0])
-            if not ambito.puede_escribir:
-                raise PermissionDenied()
-            if carpeta_id is not None:
-                exigir_edicion(ambito, solicitante_id, carpeta_id=carpeta_id)
-            return DestinoAutorizado(solicitante_id, ambito.organizacion_id, carpeta_id)
-        return self._destino_compartido(solicitante_id, carpeta_id)
-
-    def _destino_compartido(self, solicitante_id, carpeta_id):
-        # La carga compartida se imputa a la cuota de la organización de la carpeta.
+        if filas and filas[0][1] in NIVELES_ESCRITURA:
+            return DestinoAutorizado(solicitante_id, filas[0][0], carpeta_id)
+        # Carpeta compartida con permiso de escritura: el archivo cuenta en la cuota del dueño.
         acceso = (acceso_usuario(solicitante_id, carpeta_id=carpeta_id, using=self.using)
                   if carpeta_id is not None else None)
         if acceso is None or acceso.rol != ESCRITURA:
@@ -77,24 +68,21 @@ class ProveedorStorage:
         return DestinoAutorizado(solicitante_id, acceso.organizacion_id, carpeta_id)
 
     def resolver_destino_organizacion(self, *, solicitante_id, carpeta_id, organizacion_id):
-        """Revalida la membresía o el permiso de carpeta en el ámbito solicitado."""
+        """Ámbito explícito, con membresía y carpeta revalidadas en cada llamada."""
         nivel = MiembroOrganizacion.objects.using(self.using).filter(
             usuario_id=solicitante_id, organizacion_id=organizacion_id,
         ).values_list("nivel_rol", flat=True).first()
-        if nivel is None and carpeta_id is not None:
-            destino = self._destino_compartido(solicitante_id, carpeta_id)
-            if destino.organizacion_id != organizacion_id:
-                raise ErrorCarga(CodigoError.NO_ENCONTRADO)
-            return destino
         if type(nivel) is not int or nivel not in NIVELES_ESCRITURA:
-            raise PermissionDenied()
-        if carpeta_id is not None:
-            if not Carpeta.objects.using(self.using).filter(
-                pk=carpeta_id, organizacion_id=organizacion_id, en_papelera=False,
-            ).exists():
-                raise ErrorCarga(CodigoError.NO_ENCONTRADO)
-            if nivel != 0 and es_compartida(organizacion_id, self.using):
-                exigir_edicion(Ambito(organizacion_id, nivel, "COMPARTIDO"), solicitante_id, carpeta_id=carpeta_id)
+            # Editor de una carpeta compartida de esa organización (p. ej. al confirmar su carga).
+            acceso = (acceso_usuario(solicitante_id, carpeta_id=carpeta_id, using=self.using)
+                      if carpeta_id is not None else None)
+            if acceso is None or acceso.rol != ESCRITURA or acceso.organizacion_id != organizacion_id:
+                raise PermissionDenied()
+            return DestinoAutorizado(solicitante_id, organizacion_id, carpeta_id)
+        if carpeta_id is not None and not Carpeta.objects.using(self.using).filter(
+            pk=carpeta_id, organizacion_id=organizacion_id, en_papelera=False,
+        ).exists():
+            raise ErrorCarga(CodigoError.NO_ENCONTRADO)
         return DestinoAutorizado(solicitante_id, organizacion_id, carpeta_id)
 
     def leer_cuota(self, *, organizacion_id):
@@ -121,41 +109,27 @@ class ProveedorStorage:
         self._checksums[archivo.archivo_id] = archivo.checksum_sha256
 
     def autorizar_descarga(self, *, solicitante_id, archivo_id):
-        conexion = connections[self.using]
-        bloqueo_miembro = " FOR SHARE OF m" if conexion.in_atomic_block else ""
-        bloqueo_archivo = " FOR SHARE OF a" if conexion.in_atomic_block else ""
-        with conexion.cursor() as cursor:
-            cursor.execute(
-                f"""SELECT a.id, a.organizacion_id, a.carpeta_id, a.nombre,
+        with connections[self.using].cursor() as cursor:
+            cursor.execute("""SELECT a.id, a.organizacion_id, a.carpeta_id, a.nombre,
                     a.clave_s3, a.tamano_bytes, a.tipo_mime,
                     (SELECT s.checksum_sha256 FROM sesiones_carga s
                      WHERE s.archivo_id = a.id ORDER BY s.creado_en DESC LIMIT 1),
-                    (SELECT m.nivel_rol FROM miembros_organizacion m
-                     WHERE m.organizacion_id = a.organizacion_id
-                       AND m.usuario_id = %s{bloqueo_miembro}),
-                    a.propietario_id, o.tipo
-                FROM archivos a LEFT JOIN organizaciones o ON o.id = a.organizacion_id WHERE a.id = %s AND NOT a.en_papelera{bloqueo_archivo}""",
-                [solicitante_id, archivo_id],
-            )
+                    EXISTS(SELECT 1 FROM miembros_organizacion m WHERE m.organizacion_id = a.organizacion_id
+                           AND m.usuario_id = %s AND m.nivel_rol IN (0,2,3){bloqueo})
+                FROM archivos a WHERE a.id = %s AND NOT a.en_papelera{bloqueo}""".format(
+                    bloqueo=" FOR SHARE" if connections[self.using].in_atomic_block else ""),
+                [solicitante_id, archivo_id])
             fila = cursor.fetchone()
         if fila is None:
             raise ErrorCarga(CodigoError.NO_ENCONTRADO)
-
-        id_archivo, organizacion_id, carpeta_id, nombre, clave, tamano, mime, checksum, nivel, propietario_id, tipo = fila
-        ambito = Ambito(organizacion_id, nivel, tipo)
-        if nivel is not None and not ambito.puede_escribir:
-            raise ErrorCarga(CodigoError.NO_ENCONTRADO)
-        if nivel is None or (ambito.requiere_permiso_recurso and propietario_id != solicitante_id):
+        if not fila[8]:
             acceso = acceso_usuario(solicitante_id, archivo_id=archivo_id, using=self.using)
-            if acceso is None or acceso.organizacion_id != organizacion_id:
+            if acceso is None:
                 raise ErrorCarga(CodigoError.NO_ENCONTRADO)
             if not acceso.permite_descarga:
                 raise ErrorCarga(CodigoError.SIN_PERMISO)
-
-        checksum = self._checksums.pop(archivo_id, None) or checksum
-        return ArchivoVerificado(
-            id_archivo, solicitante_id, organizacion_id, carpeta_id, nombre, clave, tamano, mime, checksum,
-        )
+        checksum = self._checksums.pop(archivo_id, None) or fila[7]
+        return ArchivoVerificado(fila[0], solicitante_id, *fila[1:7], checksum)
 
     def inspeccionar_objeto_tecnico(self, *, sesion_id, organizacion_id, clave):
         referenciado = Archivo.objects.using(self.using).filter(clave_s3=clave).exists()

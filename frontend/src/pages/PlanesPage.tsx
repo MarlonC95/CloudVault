@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { HardDrive, CheckCircle, Check, ChevronRight, X, Loader2 } from 'lucide-react'
+import { HardDrive, CheckCircle, Check, ChevronRight, X, Loader2, CreditCard } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
+import ModalPago from '../components/planes/ModalPago'
 import { useOrganizacion } from '../context/organizacionesContexto'
-import { listarPlanes, obtenerMiPlan, suscribirPlan } from '../services/planesService'
+import { listarPlanes, obtenerMiPlan, suscribirPlan, listarFacturas } from '../services/planesService'
 import { ErrorApi } from '../services/errorApi'
 import type { Plan, MiPlan, TipoFacturacion, Factura } from '../types/planes'
 
@@ -48,16 +49,25 @@ function PlanesPage() {
   const [facturacion, setFacturacion] = useState<TipoFacturacion>('mensual')
   const [planes, setPlanes] = useState<Plan[]>([])
   const [miPlan, setMiPlan] = useState<MiPlan | null>(null)
-  const [facturas] = useState<Factura[]>([])
+  const [facturas, setFacturas] = useState<Factura[]>([])
   const [cargando, setCargando] = useState(true)
   const [errorGeneral, setErrorGeneral] = useState('')
   const [suscribiendoPlanId, setSuscribiendoPlanId] = useState<string | null>(null)
+  const [aviso, setAviso] = useState('')
+  // Plan de pago pendiente de cobro (abre el modal de pago) o gestión de tarjetas sin cobro.
+  const [planACobrar, setPlanACobrar] = useState<PlanCatalogo | null>(null)
+  const [gestionandoTarjetas, setGestionandoTarjetas] = useState(false)
 
   async function cargarDatos() {
     try {
-      const [catalogo, actual] = await Promise.all([listarPlanes(), obtenerMiPlan(organizacion.id)])
+      const [catalogo, actual, historial] = await Promise.all([
+        listarPlanes(),
+        obtenerMiPlan(organizacion.id),
+        listarFacturas(organizacion.id).catch(() => ({ resultados: [] as Factura[] })),
+      ])
       setPlanes(catalogo.resultados)
       setMiPlan(actual)
+      setFacturas(historial.resultados)
       setFacturacion(actual.plan.tipoFacturacion)
     } catch (error) {
       setErrorGeneral(error instanceof ErrorApi ? error.message : 'No se pudieron cargar los planes.')
@@ -68,11 +78,16 @@ function PlanesPage() {
 
   useEffect(() => {
     let cancelado = false
-    Promise.all([listarPlanes(), obtenerMiPlan(organizacion.id)])
-      .then(([catalogo, actual]) => {
+    Promise.all([
+      listarPlanes(),
+      obtenerMiPlan(organizacion.id),
+      listarFacturas(organizacion.id).catch(() => ({ resultados: [] as Factura[] })),
+    ])
+      .then(([catalogo, actual, historial]) => {
         if (cancelado) return
         setPlanes(catalogo.resultados)
         setMiPlan(actual)
+        setFacturas(historial.resultados)
         setFacturacion(actual.plan.tipoFacturacion)
       })
       .catch((error) => {
@@ -101,10 +116,20 @@ function PlanesPage() {
     ]
   }, [planesCatalogo])
 
+  function montoDe(plan: Plan): number {
+    return facturacion === 'anual' ? plan.precioAnual : plan.precioMensual
+  }
+
   async function manejarActualizarPlan(plan: PlanCatalogo) {
     if (plan.id === miPlan?.plan.id) return
-    setSuscribiendoPlanId(plan.id)
     setErrorGeneral('')
+    setAviso('')
+    // Los planes de pago no cambian directo: primero el pago simulado con tarjeta.
+    if (montoDe(plan) > 0) {
+      setPlanACobrar(plan)
+      return
+    }
+    setSuscribiendoPlanId(plan.id)
     try {
       await ejecutar(() => suscribirPlan(plan.id, facturacion, organizacion.id))
       await cargarDatos()
@@ -117,6 +142,15 @@ function PlanesPage() {
     } finally {
       setSuscribiendoPlanId(null)
     }
+  }
+
+  /** Lo llama el modal; si falla, el modal muestra el error y sigue abierto. */
+  async function pagarPlan(tarjetaId: string) {
+    if (!planACobrar) return
+    await ejecutar(() => suscribirPlan(planACobrar.id, facturacion, organizacion.id, tarjetaId))
+    setAviso(`Pago aprobado (simulado). Ahora tienes el plan ${planACobrar.nombre}.`)
+    setPlanACobrar(null)
+    await cargarDatos()
   }
 
 
@@ -176,6 +210,12 @@ function PlanesPage() {
             </div>
           </div>
 
+          {aviso && (
+            <div className="alert alert-success" role="status" style={{ maxWidth: 560, width: '100%', marginBottom: 16 }}>
+              {aviso}
+            </div>
+          )}
+
           {errorGeneral && (
             <div className="alert alert-danger" role="alert" style={{ maxWidth: 560, width: '100%', marginBottom: 16 }}>
               {errorGeneral}
@@ -209,6 +249,15 @@ function PlanesPage() {
             </div>
             <span style={{ fontSize: 12, color: '#94A3B8' }}>{libreTexto} libres</span>
           </div>
+
+          <button
+            type="button"
+            className="btn btn-link btn-sm d-flex align-items-center gap-1 mt-2"
+            onClick={() => setGestionandoTarjetas(true)}
+            disabled={cargando}
+          >
+            <CreditCard size={15} /> Métodos de pago
+          </button>
         </div>
 
         {cargando ? (
@@ -350,7 +399,7 @@ function PlanesPage() {
                   <div style={{ height: 1, background: '#F1F5F9', marginBottom: 18 }} />
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {[`${plan.almacenamientoLegible} almacenamiento`, ...plan.caracteristicas].map((caracteristica) => (
+                    {Array.from(new Set([`${plan.almacenamientoLegible} almacenamiento`, ...plan.caracteristicas])).map((caracteristica) => (
                       <div key={caracteristica} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div
                           style={{
@@ -441,9 +490,9 @@ function PlanesPage() {
                   Historial de facturas
                 </h2>
                 <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden' }}>
-                  {facturas.map((factura) => (
+                  {facturas.map((factura, indice) => (
                     <div
-                      key={factura.id}
+                      key={`${factura.id}-${indice}`}
                       style={{
                         display: 'flex',
                         justifyContent: 'space-between',
@@ -498,6 +547,18 @@ function PlanesPage() {
           </>
         )}
       </div>
+
+      {planACobrar && (
+        <ModalPago
+          cobro={{
+            concepto: `Plan ${planACobrar.nombre} (${facturacion})`,
+            monto: montoDe(planACobrar),
+          }}
+          onCerrar={() => setPlanACobrar(null)}
+          onPagar={pagarPlan}
+        />
+      )}
+      {gestionandoTarjetas && <ModalPago onCerrar={() => setGestionandoTarjetas(false)} />}
     </DashboardLayout>
   )
 }

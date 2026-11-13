@@ -14,6 +14,7 @@ from django.utils import timezone
 from auth_workspaces.models import Usuario
 
 from .models import MiembroOrganizacion, Organizacion, Plan, Suscripcion
+from .services import sumar_meses
 
 
 def _slug_usuario(correo):
@@ -27,18 +28,17 @@ def _generar_slug(correo):
     return f"workspace-{base}-{secrets.token_hex(4)}"
 
 
-def crear_espacio(usuario, *, nombre, tipo, organizacion_id=None, plan_id=None):
-    """Inicializa un espacio y su cuota dentro de la transacción del llamador."""
+def _crear_espacio(usuario):
+    """Crea organización, membresía de propietario y suscripción gratuita."""
+    nombre_org = f"Espacio de {usuario.nombre_completo}"[:150]
     slug = _generar_slug(usuario.correo_electronico)
 
     for _ in range(5):
         try:
             with transaction.atomic():
                 organizacion = Organizacion.objects.create(
-                    nombre=nombre,
+                    nombre=nombre_org,
                     slug=slug,
-                    tipo=tipo,
-                    **({"id": organizacion_id} if organizacion_id is not None else {}),
                 )
         except IntegrityError:
             slug = _generar_slug(usuario.correo_electronico)
@@ -54,15 +54,18 @@ def crear_espacio(usuario, *, nombre, tipo, organizacion_id=None, plan_id=None):
     )
 
     ahora = timezone.now()
-    if plan_id is None:
-        plan_id = Plan.objects.filter(esta_activo=True, id=1).values_list("id", flat=True).first() or 1
+    plan_id = (
+        Plan.objects.filter(esta_activo=True, id=1).values_list("id", flat=True).first()
+        or Plan.objects.filter(esta_activo=True).order_by("precio", "id").values_list("id", flat=True).first()
+        or 1
+    )
     Suscripcion.objects.create(
         organizacion_id=organizacion.id,
         plan_id=plan_id,
         estado=Suscripcion.ESTADO_ACTIVE,
         intervalo=Suscripcion.INTERVALO_MENSUAL,
         periodo_inicio=ahora,
-        periodo_fin=ahora.replace(year=ahora.year + 10, day=28 if (ahora.month, ahora.day) == (2, 29) else ahora.day),
+        periodo_fin=sumar_meses(ahora, 120),
         auto_renovar=True,
     )
 
@@ -81,16 +84,11 @@ def asegurar_espacio_personal(usuario_id) -> UUID:
         usuario = Usuario.objects.select_for_update().get(pk=usuario_id)
 
         membresia = (
-            MiembroOrganizacion.objects.filter(
-                usuario_id=usuario_id, nivel_rol=0,
-                organizacion_id__in=Organizacion.objects.filter(tipo=Organizacion.PERSONAL).values("pk"),
-            )
+            MiembroOrganizacion.objects.filter(usuario_id=usuario_id, nivel_rol=0)
             .order_by("fecha_union")
             .first()
         )
         if membresia is not None:
             return membresia.organizacion_id
 
-        return crear_espacio(
-            usuario, nombre=f"Espacio de {usuario.nombre_completo}"[:150], tipo=Organizacion.PERSONAL,
-        )
+        return _crear_espacio(usuario)

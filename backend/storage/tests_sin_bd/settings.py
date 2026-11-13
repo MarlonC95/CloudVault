@@ -5,7 +5,7 @@ from unittest.mock import patch
 from almacenamiento.tests.settings import *  # noqa: F403
 
 INSTALLED_APPS = list(dict.fromkeys([*INSTALLED_APPS, "storage", "subscriptions", "compartir"]))  # noqa: F405
-ALMACENAMIENTO_URLCONFS_NEGOCIO = ["storage.urls", "subscriptions.urls", "compartir.urls"]
+ALMACENAMIENTO_URLCONFS_NEGOCIO = ["storage.urls", "subscriptions.urls"]
 
 
 def _rechazar_red(*args, **kwargs):

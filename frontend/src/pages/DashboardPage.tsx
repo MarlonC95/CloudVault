@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { ChevronLeft, Folder as FolderIcon } from 'lucide-react'
 import { useOrganizacion } from '../context/organizacionesContexto'
 import { useArchivos } from '../context/archivosContexto'
-import { subirArchivo, obtenerUrlDescarga } from '../services/archivosService'
+import { subirArchivo, obtenerUrlDescarga, obtenerUrlVistaPrevia } from '../services/archivosService'
 import { convertirEnErrorApi, obtenerMensajeDeCampo } from '../services/errorApi'
 import { formatearTamanoBytes } from '../utils/formatoArchivo'
 import type { RangoFecha, RangoTamano } from '../utils/filtrosArchivos'
@@ -80,6 +80,24 @@ function DashboardPage() {
       const mb = archivo.tamanoBytes / (1024 * 1024)
       return filtroTamano === 'pequeno' ? mb < 1 : filtroTamano === 'mediano' ? mb >= 1 && mb < 100 : mb >= 100
     })
+
+  async function manejarVistaPrevia(archivo: Archivo) {
+    setErrorAccion(null)
+    const pestana = window.open('about:blank', '_blank')
+    try {
+      const vistaPrevia = await ejecutar(() => obtenerUrlVistaPrevia(archivo.id))
+      if (!vistaPrevia.url) throw new Error('La API no devolvió una URL de vista previa.')
+      if (pestana) {
+        pestana.opener = null
+        pestana.location.href = vistaPrevia.url
+      } else {
+        window.location.assign(vistaPrevia.url)
+      }
+    } catch (causa) {
+      pestana?.close()
+      setErrorAccion(causa instanceof Error && causa.message.startsWith('La API') ? causa.message : convertirEnErrorApi(causa).message)
+    }
+  }
 
   async function manejarDescargar(archivo: Archivo) {
     try {
@@ -207,6 +225,7 @@ function DashboardPage() {
               archivos={archivosFiltrados}
               archivoSeleccionadoId={archivoSeleccionado?.id ?? null}
               onSeleccionarArchivo={setArchivoSeleccionado}
+              onVistaPrevia={manejarVistaPrevia}
               onDescargar={manejarDescargar}
               onCompartir={puedeCompartir ? compartirArchivo : undefined}
               onEliminar={manejarEliminar}
@@ -217,6 +236,7 @@ function DashboardPage() {
 
           <PanelDetalleArchivo
             archivo={archivoSeleccionado}
+            onVistaPrevia={manejarVistaPrevia}
             onDescargar={manejarDescargar}
             onCompartir={puedeCompartir ? compartirArchivo : undefined}
             onEliminar={manejarEliminar}

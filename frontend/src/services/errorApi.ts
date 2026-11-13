@@ -19,6 +19,13 @@ export type CodigoErrorApi =
   | 'CORREO_EN_USO'
   | 'CUOTA_EXCEDIDA'
   | 'RATE_LIMITED'
+  | 'CONTEXT_NOT_READY'
+  | 'CANDIDATE_STALE'
+  | 'PURGE_INCOMPATIBLE'
+  | 'RETRY_DEFERRED'
+  | 'METODO_NO_PERMITIDO'
+  | 'OWNER_REQUIRED'
+  | 'CANNOT_REMOVE_SELF'
   | 'ERROR_INTERNO'
   | 'SERVICE_UNAVAILABLE'
   | 'SIN_CONEXION'
@@ -50,6 +57,13 @@ const MENSAJES_POR_CODIGO: Record<CodigoErrorApi, string> = {
   CORREO_EN_USO: 'Ese correo ya está registrado. Puedes iniciar sesión o recuperar tu cuenta.',
   CUOTA_EXCEDIDA: 'No tienes almacenamiento suficiente para esta operación.',
   RATE_LIMITED: 'Demasiados intentos. Espera antes de volver a intentarlo.',
+  CONTEXT_NOT_READY: 'La organización aún no está lista. Intenta de nuevo en unos segundos.',
+  CANDIDATE_STALE: 'El estado del elemento cambió. Actualiza la vista e intenta de nuevo.',
+  PURGE_INCOMPATIBLE: 'La selección de vaciado ya no coincide con el estado actual de la papelera.',
+  RETRY_DEFERRED: 'La operación aún tiene elementos en espera. Intenta de nuevo en unos segundos.',
+  METODO_NO_PERMITIDO: 'Operación no permitida en este recurso.',
+  OWNER_REQUIRED: 'La organización debe conservar al menos un propietario activo.',
+  CANNOT_REMOVE_SELF: 'No puedes retirarte a ti mismo de la organización desde este panel.',
   ERROR_INTERNO: 'Ocurrió un error en el servidor. Intenta más tarde.',
   SERVICE_UNAVAILABLE: 'El servicio no está disponible en este momento. Intenta más tarde.',
   SIN_CONEXION: 'No se pudo conectar con la API. Revisa tu conexión e intenta de nuevo.',

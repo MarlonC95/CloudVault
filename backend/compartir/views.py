@@ -15,6 +15,7 @@ from uuid import UUID
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core import signing
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, ValidationError
@@ -34,8 +35,7 @@ from common.responses import ok
 from storage.models import Archivo, Carpeta
 from storage.servicios import ProveedorStorage
 
-from .acceso import (acceso_usuario, dentro_del_enlace, enlace_vigente, es_compartida,
-                     es_miembro, miembro_con_acceso_general, unirse)
+from .acceso import acceso_usuario, dentro_del_enlace, enlace_vigente, es_miembro, unirse
 from .models import ESCRITURA, LECTURA, EnlacePublico, PermisoRecurso
 
 SALT_ACCESO = "compartir.acceso"
@@ -77,9 +77,7 @@ def _exigir_dueno(request, recurso):
     # Sin organización, resolver_organizacion caería en la única membresía del usuario.
     if recurso.organizacion_id is None:
         raise NotFound()
-    ambito = resolver_organizacion(request.user, recurso.organizacion_id)
-    if not ambito.es_admin:
-        raise NotFound()
+    return resolver_organizacion(request.user, recurso.organizacion_id, escritura=True)
 
 
 def _rol_y_descarga(datos, recurso, campo, rol, descarga):
@@ -143,10 +141,9 @@ def _permiso(p):
             "fecha_creacion": p.fecha_creacion}
 
 
-def _contenido(carpeta):
-    ambito = {"organizacion_id": carpeta.organizacion_id, "en_papelera": False}
-    carpetas = Carpeta.objects.filter(padre_id=carpeta.pk, **ambito).order_by("nombre")
-    archivos = Archivo.objects.filter(carpeta_id=carpeta.pk, **ambito).order_by("nombre")
+def _contenido(carpeta_id):
+    carpetas = Carpeta.objects.filter(padre_id=carpeta_id, en_papelera=False).order_by("nombre")
+    archivos = Archivo.objects.filter(carpeta_id=carpeta_id, en_papelera=False).order_by("nombre")
     return {"carpetas": [{"id": c.pk, "nombre": c.nombre} for c in carpetas],
             "archivos": [{"id": a.pk, "nombre": a.nombre, "tamano_bytes": a.tamano_bytes,
                           "tipo_mime": a.tipo_mime, "fecha_modificacion": a.actualizado_en} for a in archivos]}
@@ -170,7 +167,7 @@ def _puede_subir(usuario, carpeta_id):
         return False
     try:
         ProveedorStorage().resolver_destino(solicitante_id=usuario.pk, carpeta_id=carpeta_id)
-    except (NotFound, PermissionDenied, ErrorCarga):
+    except (PermissionDenied, ErrorCarga):
         return False
     return True
 
@@ -202,17 +199,33 @@ class EnlacesView(Base):
         if nuevo:
             enlace = EnlacePublico(token=secrets.token_urlsafe(32), creado_por_id=request.user.pk, **_filtro(recurso))
         enlace.rol, enlace.permite_descarga, enlace.fecha_expiracion = rol, descarga, expiracion
+        nueva_password = False
         if "password" in datos:
             password = datos["password"]
             if password in (None, ""):
                 enlace.contrasena_hash = None
             elif isinstance(password, str) and len(password) <= 128:
                 enlace.contrasena_hash = make_password(password)
+                nueva_password = True
             else:
                 raise ValidationError({"password": ["Texto de hasta 128 caracteres, o null para quitarla."]})
-        # ponytail: dos POST simultáneos del primer enlace chocan con ux_enlace_* (500 en el segundo);
-        # reintentar como actualización si llega a pasar.
-        enlace.save(force_insert=nuevo)
+        try:
+            with transaction.atomic():
+                enlace.save(force_insert=nuevo)
+                if not nuevo and nueva_password:
+                    PermisoRecurso.objects.filter(enlace=enlace).delete()
+        except IntegrityError:
+            enlace = EnlacePublico.objects.filter(**_filtro(recurso)).first()
+            if enlace is None:
+                raise
+            nuevo = False
+            enlace.rol, enlace.permite_descarga, enlace.fecha_expiracion = rol, descarga, expiracion
+            if "password" in datos:
+                enlace.contrasena_hash = make_password(datos["password"]) if nueva_password else None
+            with transaction.atomic():
+                enlace.save()
+                if nueva_password:
+                    PermisoRecurso.objects.filter(enlace=enlace).delete()
         _auditar(request, "ENLACE_CREADO" if nuevo else "ENLACE_ACTUALIZADO", recurso.organizacion_id,
                  enlace_id=enlace.pk, rol=rol, permite_descarga=descarga)
         return ok(_enlace(enlace), status=201 if nuevo else 200)
@@ -235,7 +248,7 @@ class PermisosView(Base):
         _exigir_dueno(request, recurso)
         permisos = (PermisoRecurso.objects.select_related("usuario", "enlace")
                     .filter(**_filtro(recurso)).order_by("fecha_creacion", "id"))
-        return ok([_permiso(p) for p in permisos])
+        return ok([_permiso(p) for p in permisos if _efectivo(p) is not None])
 
     def post(self, request):
         datos = _datos(request)
@@ -245,12 +258,19 @@ class PermisosView(Base):
         correo = datos.get("correo")
         usuario = (Usuario.objects.filter(correo_electronico__iexact=correo.strip(), is_active=True).first()
                    if isinstance(correo, str) and correo.strip() else None)
-        if usuario is None or (es_miembro(usuario.pk, recurso.organizacion_id)
-                               and not es_compartida(recurso.organizacion_id)):
-            raise ValidationError({"correo": ["No hay una cuenta activa disponible con ese correo."]})
-        permiso, creado = PermisoRecurso.objects.update_or_create(
-            usuario=usuario, **_filtro(recurso),
-            defaults={"tipo_permiso": rol, "permite_descarga": descarga, "enlace": None})
+        if usuario is None or es_miembro(usuario.pk, recurso.organizacion_id):
+            raise ValidationError({"correo": ["No hay un usuario registrado con ese correo fuera de este espacio."]})
+        defaults = {"tipo_permiso": rol, "permite_descarga": descarga, "enlace": None}
+        try:
+            with transaction.atomic():
+                permiso, creado = PermisoRecurso.objects.update_or_create(
+                    usuario=usuario, **_filtro(recurso), defaults=defaults)
+        except IntegrityError:
+            with transaction.atomic():
+                PermisoRecurso.objects.filter(usuario=usuario, **_filtro(recurso)).update(**defaults)
+                permiso = PermisoRecurso.objects.select_related("usuario", "enlace").get(
+                    usuario=usuario, **_filtro(recurso))
+                creado = False
         _auditar(request, "PERMISO_OTORGADO", recurso.organizacion_id, permiso_id=permiso.pk,
                  usuario_destino=usuario.pk, tipo_permiso=rol, permite_descarga=descarga)
         return ok(_permiso(permiso), status=201 if creado else 200)
@@ -263,6 +283,8 @@ class PermisoDetalleView(Base):
         if permiso is None:
             raise NotFound()
         recurso = permiso.archivo or permiso.carpeta
+        if recurso.en_papelera:
+            raise NotFound()
         _exigir_dueno(request, recurso)
         return permiso, recurso
 
@@ -309,24 +331,19 @@ class ContenidoCompartidoView(Base):
         acceso = acceso_usuario(request.user.pk, carpeta_id=pk)
         if acceso is None:
             raise NotFound()
-        carpeta = Carpeta.objects.select_related("padre").get(pk=pk)
-        padre = carpeta.padre
-        padre_id = (padre.pk if padre and padre.organizacion_id == carpeta.organizacion_id
-                    and acceso_usuario(request.user.pk, carpeta_id=padre.pk) else None)
+        carpeta = Carpeta.objects.get(pk=pk)
+        padre_id = (carpeta.padre_id if carpeta.padre_id
+                    and acceso_usuario(request.user.pk, carpeta_id=carpeta.padre_id) else None)
         return ok({"carpeta": {"id": carpeta.pk, "nombre": carpeta.nombre, "padre_id": padre_id},
                    "rol": acceso.rol, "permite_descarga": acceso.permite_descarga,
-                   "puede_subir": acceso.rol == ESCRITURA and _puede_subir(request.user, carpeta.pk),
-                   **_contenido(carpeta)})
+                   "puede_subir": acceso.rol == ESCRITURA, **_contenido(carpeta.pk)})
 
 
 class VistaPreviaView(Base):
     def get(self, request, pk):
         archivo = Archivo.objects.filter(pk=pk, en_papelera=False).first()
-        if archivo is None or not (
-            miembro_con_acceso_general(request.user.pk, archivo.organizacion_id)
-            or (archivo.propietario_id == request.user.pk and es_miembro(request.user.pk, archivo.organizacion_id))
-            or acceso_usuario(request.user.pk, archivo_id=pk)
-        ):
+        if archivo is None or not (es_miembro(request.user.pk, archivo.organizacion_id)
+                                   or acceso_usuario(request.user.pk, archivo_id=pk)):
             raise NotFound()
         return ok(_url_temporal(archivo, descargar=False))
 
@@ -382,8 +399,13 @@ class PublicoBase(Base):
 
     @staticmethod
     def verificado(request, enlace):
-        """Un enlace protegido solo se abre con su comprobante de contraseña."""
+        """¿Puede ver el contenido? Sin contraseña, con X-Share-Token válido o con acceso propio."""
         if not enlace.contrasena_hash:
+            return True
+        usuario, recurso = request.user, enlace.recurso
+        if usuario.is_authenticated and (
+                es_miembro(usuario.pk, recurso.organizacion_id)
+                or acceso_usuario(usuario.pk, archivo_id=enlace.archivo_id, carpeta_id=enlace.carpeta_id)):
             return True
         try:
             datos = signing.loads(request.headers.get("X-Share-Token", ""), salt=SALT_ACCESO,
@@ -442,7 +464,7 @@ class ContenidoPublicoView(PublicoBase):
         carpeta = Carpeta.objects.get(pk=carpeta_id)
         padre_id = None if carpeta.pk == enlace.carpeta_id else carpeta.padre_id
         return ok({"carpeta": {"id": carpeta.pk, "nombre": carpeta.nombre, "padre_id": padre_id},
-                   "rol": enlace.rol, "permite_descarga": enlace.permite_descarga, **_contenido(carpeta)})
+                   "rol": enlace.rol, "permite_descarga": enlace.permite_descarga, **_contenido(carpeta.pk)})
 
 
 class ArchivoPublicoView(PublicoBase):

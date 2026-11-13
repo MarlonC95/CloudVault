@@ -1584,8 +1584,10 @@ bloque lateral del dashboard.
 
 ### 10.3 `POST /api/v1/mi-plan/suscribir/` — ✅ Implementado
 
-Cambia o contrata un plan. Resuelve el `TODO(backend)` del botón
-"Actualizar Plan" de `PlanesPage.tsx` (pago simulado por ahora).
+Cambia o contrata un plan con **pago simulado con tarjeta** (sin cargo real).
+Los planes de pago exigen `tarjeta_id` (una tarjeta guardada de la organización, §10.5,
+no vencida); el plan gratuito no la necesita. El pago queda en `historial_pagos` con
+referencia `sim-<marca>-<ultimos4>-<token>`.
 
 **Headers:** `Authorization: Bearer <access>`
 
@@ -1594,7 +1596,8 @@ Cambia o contrata un plan. Resuelve el `TODO(backend)` del botón
 ```json
 {
   "plan_id": "empresarial",
-  "tipo_facturacion": "anual"
+  "tipo_facturacion": "anual",
+  "tarjeta_id": "9b2e…"
 }
 ```
 
@@ -1622,7 +1625,8 @@ Cambia o contrata un plan. Resuelve el `TODO(backend)` del botón
     "code": "VALIDATION_ERROR",
     "fields": {
       "plan_id": ["El plan indicado no existe."],
-      "tipo_facturacion": ["El tipo de facturación debe ser 'mensual' o 'anual'."]
+      "tipo_facturacion": ["El tipo de facturación debe ser 'mensual' o 'anual'."],
+      "tarjeta_id": ["Selecciona una tarjeta para pagar."]
     }
   }
 }
@@ -1640,6 +1644,54 @@ Cambia o contrata un plan. Resuelve el `TODO(backend)` del botón
   }
 }
 ```
+
+### 10.5 `/api/v1/mi-plan/tarjetas/` — ✅ Implementado (pago simulado)
+
+Tarjetas de crédito/débito de la organización, **máximo 2**. Solo el propietario.
+El número y el CVV se validan (Luhn, CVV de 3 dígitos o 4 en Amex, vencimiento no pasado)
+y se descartan: solo se guardan titular, marca, tipo, 4 últimos dígitos y vencimiento
+(tabla `metodos_pago`, `database/metodos_pago.sql`). La primera tarjeta queda predeterminada.
+
+| Método | Ruta | Uso |
+|--------|------|-----|
+| GET | `/mi-plan/tarjetas/?organizacion_id=` | Lista (sin paginar) |
+| POST | `/mi-plan/tarjetas/` | Alta. 201; 409 `VALIDATION_ERROR` en `fields.tarjetas` si ya hay 2 |
+| PATCH | `/mi-plan/tarjetas/{id}/` | Actualiza: `titular`, `tipo`, `mes_expiracion`/`anio_expiracion`, reemplazo con `numero`+`cvv`, o `predeterminada: true` |
+| DELETE | `/mi-plan/tarjetas/{id}/?organizacion_id=` | 204; si era la predeterminada, pasa a serlo la otra |
+
+**Body (POST)**
+
+```json
+{
+  "titular": "Ana Pérez",
+  "numero": "4242 4242 4242 4242",
+  "cvv": "123",
+  "mes_expiracion": 12,
+  "anio_expiracion": 2030,
+  "tipo": "credito",
+  "organizacion_id": "…"
+}
+```
+
+**Tarjeta (respuesta)**
+
+```json
+{
+  "data": {
+    "id": "9b2e…",
+    "titular": "Ana Pérez",
+    "marca": "visa",
+    "tipo": "credito",
+    "ultimos4": "4242",
+    "mes_expiracion": 12,
+    "anio_expiracion": 2030,
+    "predeterminada": true
+  }
+}
+```
+
+Errores: 400 `VALIDATION_ERROR` por campo (`numero`, `cvv`, `titular`, `tipo`,
+`mes_expiracion`, `anio_expiracion`); 403 si no es propietario; 404 si la tarjeta es de otra organización.
 
 ### 10.4 `GET /api/v1/mi-plan/facturas/` — 🆕 Pendiente
 
@@ -1720,6 +1772,7 @@ Historial de facturación.
 | 10.2 | `/api/v1/mi-plan/` | GET | ✅ Implementado |
 | 10.3 | `/api/v1/mi-plan/suscribir/` | POST | ✅ Implementado |
 | 10.4 | `/api/v1/mi-plan/facturas/` | GET | 🆕 Pendiente |
+| 10.5 | `/api/v1/mi-plan/tarjetas/` (+ `{id}/`) | GET, POST, PATCH, DELETE | ✅ Implementado (pago simulado) |
 
 ## Apéndice B — Notas de integración con el Frontend
 

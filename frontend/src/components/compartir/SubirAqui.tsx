@@ -22,7 +22,7 @@ function SubirAqui({ carpetaId, onSubido }: SubirAquiProps) {
     try {
       for (const [i, archivo] of archivos.entries()) {
         setEstado(`Subiendo ${i + 1} de ${archivos.length}: ${archivo.name}…`)
-        await subirArchivo(archivo, carpetaId)
+        await subirArchivo(archivo, carpetaId, null)
       }
     } catch (causa) {
       setError(convertirEnErrorApi(causa).message)

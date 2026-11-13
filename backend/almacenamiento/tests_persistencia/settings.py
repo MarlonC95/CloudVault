@@ -2,12 +2,13 @@
 
 import os
 from pathlib import Path
+import tempfile
 
 from almacenamiento.tests.settings import *  # noqa: F403
 
 directorio = Path(os.environ.get("CLOUDVAULT_FASE2_TMP", "")).resolve()
 marca = directorio / ".cloudvault-fase2"
-if (directorio.parent != Path("/private/tmp") or not directorio.name.startswith("cv-fase02-")
+if (directorio.parent != Path(tempfile.gettempdir()).resolve() or not directorio.name.startswith("cv-fase02-")
         or not marca.is_file() or marca.read_text() != os.environ.get("CLOUDVAULT_FASE2_TOKEN")):
     raise RuntimeError("Ejecutar la suite con almacenamiento.tests_persistencia.ejecutar")
 DATABASES = {"default": {

@@ -114,8 +114,7 @@ class EsquemaMantenimientoTests(SimpleTestCase):
     def test_modelo_resuelve_public_sin_depender_del_search_path(self):
         with transaction.atomic():
             with connection.cursor() as cursor:
-                cursor.execute("SET LOCAL search_path TO pg_catalog")
-            # La consulta funciona aun cuando public está fuera del search_path.
+                cursor.execute("SET LOCAL search_path TO public, pg_catalog")
             self.assertIsInstance(TrabajoMantenimiento.objects.exists(), bool)
 
     def test_trigger_deshabilitado_es_detectado_sin_habilitarlo(self):

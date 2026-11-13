@@ -1,6 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import PanelInvitaciones from '../components/organizaciones/PanelInvitaciones'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { useOrganizacion } from '../context/organizacionesContexto'
 import { convertirEnErrorApi, obtenerMensajeDeCampo } from '../services/errorApi'
@@ -93,17 +92,12 @@ export default function MiembrosPage() {
   }
 
   return (
-    <DashboardLayout seccionActiva="miembros">
+    <DashboardLayout seccionActiva="administracion">
       <section className="container-fluid p-3 p-md-4" aria-labelledby="titulo-miembros">
         <Link className="d-lg-none small d-inline-block mb-3" to="/dashboard">Volver a archivos</Link>
-        <h1 className="h3 mb-1" id="titulo-miembros">Miembros</h1>
+        <h1 className="h3 mb-1" id="titulo-miembros">Administración de miembros</h1>
         <p className="text-secondary text-break mb-3">{organizacion.nombre}</p>
 
-        {puedeAdministrar && organizacion.tipo === 'COMPARTIDO' && (
-          <div className="mb-4">
-            <PanelInvitaciones organizacionId={organizacion.id} ejecutar={ejecutar} />
-          </div>
-        )}
         {aviso && <p role="status" className="alert alert-success py-2">{aviso}</p>}
         {errorAccion && <p role="alert" className="alert alert-danger py-2">{errorAccion}</p>}
         {errorLista && (

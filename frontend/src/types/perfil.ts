@@ -18,7 +18,7 @@ export interface PerfilUsuario {
   nombreCompleto: string
   correoElectronico: string
   rol: RolUsuario
-  plan: PlanResumen
+  plan: PlanResumen | null
   dosFactores: boolean
   almacenamiento: AlmacenamientoUsuario
   fechaRegistro: string
