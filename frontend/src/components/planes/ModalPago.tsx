@@ -26,9 +26,13 @@ function mensajeDeError(causa: unknown): string {
   return Object.values(error.campos).flat().join(' ') || error.message
 }
 
-/** Agrupa el número en bloques de 4 mientras se escribe. */
+/** Amex (34/37) tiene 15 dígitos y CVV de 4; el resto, 16 y 3 (mismas reglas que el backend). */
+const esAmex = (numero: string) => /^3[47]/.test(numero)
+
+/** Limita el número a su largo y lo agrupa en bloques de 4 mientras se escribe. */
 function formatearNumero(valor: string): string {
-  return valor.replace(/\D/g, '').slice(0, 19).replace(/(\d{4})(?=\d)/g, '$1 ')
+  const digitos = valor.replace(/\D/g, '')
+  return digitos.slice(0, esAmex(digitos) ? 15 : 16).replace(/(\d{4})(?=\d)/g, '$1 ')
 }
 
 function ModalPago({ cobro, onCerrar, onPagar }: ModalPagoProps) {
@@ -105,6 +109,7 @@ function ModalPago({ cobro, onCerrar, onPagar }: ModalPagoProps) {
 
   const campo = <K extends keyof DatosTarjeta>(clave: K, valor: DatosTarjeta[K]) =>
     setFormulario((actual) => ({ ...actual, [clave]: valor }))
+  const largoCvv = esAmex(formulario.numero) ? 4 : 3
 
   return (
     <div
@@ -159,7 +164,11 @@ function ModalPago({ cobro, onCerrar, onPagar }: ModalPagoProps) {
               Número {editando !== 'nueva' && <span className="text-muted fw-normal">(déjalo vacío para conservar el actual)</span>}
             </label>
             <input id="numeroTarjeta" className="form-control mb-2" style={ESTILO_CAMPO} inputMode="numeric" autoComplete="cc-number"
-              required={editando === 'nueva'} value={formulario.numero} onChange={(e) => campo('numero', formatearNumero(e.target.value))}
+              required={editando === 'nueva'} value={formulario.numero}
+              onChange={(e) => {
+                const numero = formatearNumero(e.target.value)
+                setFormulario((actual) => ({ ...actual, numero, cvv: actual.cvv.slice(0, esAmex(numero) ? 4 : 3) }))
+              }}
               placeholder="4242 4242 4242 4242" />
             <div className="d-flex gap-2 mb-3">
               <div className="flex-fill">
@@ -179,8 +188,9 @@ function ModalPago({ cobro, onCerrar, onPagar }: ModalPagoProps) {
               <div style={{ width: 90 }}>
                 <label htmlFor="cvvTarjeta" className="form-label small fw-semibold mb-1">CVV</label>
                 <input id="cvvTarjeta" type="password" className="form-control" style={ESTILO_CAMPO} inputMode="numeric" autoComplete="cc-csc"
-                  maxLength={4} required={editando === 'nueva' || formulario.numero !== ''} value={formulario.cvv}
-                  onChange={(e) => campo('cvv', e.target.value.replace(/\D/g, ''))} />
+                  minLength={largoCvv} maxLength={largoCvv} required={editando === 'nueva' || formulario.numero !== ''}
+                  value={formulario.cvv}
+                  onChange={(e) => campo('cvv', e.target.value.replace(/\D/g, '').slice(0, largoCvv))} />
               </div>
             </div>
             {error && <p role="alert" className="small text-danger">{error}</p>}

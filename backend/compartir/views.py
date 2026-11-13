@@ -36,7 +36,8 @@ from common.responses import ok
 from storage.models import Archivo, Carpeta
 from storage.servicios import ProveedorStorage
 
-from .acceso import acceso_usuario, dentro_del_enlace, enlace_vigente, es_miembro, unirse
+from .acceso import (acceso_usuario, dentro_del_enlace, enlace_vigente, es_compartida,
+                     es_miembro, miembro_con_acceso_general, unirse)
 from .models import ESCRITURA, LECTURA, EnlacePublico, PermisoRecurso
 
 SALT_ACCESO = "compartir.acceso"
@@ -78,7 +79,9 @@ def _exigir_dueno(request, recurso):
     # Sin organización, resolver_organizacion caería en la única membresía del usuario.
     if recurso.organizacion_id is None:
         raise NotFound()
-    return resolver_organizacion(request.user, recurso.organizacion_id, escritura=True)
+    ambito = resolver_organizacion(request.user, recurso.organizacion_id)
+    if not ambito.es_admin:
+        raise NotFound()
 
 
 def _rol_y_descarga(datos, recurso, campo, rol, descarga):
@@ -142,9 +145,10 @@ def _permiso(p):
             "fecha_creacion": p.fecha_creacion}
 
 
-def _contenido(carpeta_id):
-    carpetas = Carpeta.objects.filter(padre_id=carpeta_id, en_papelera=False).order_by("nombre")
-    archivos = Archivo.objects.filter(carpeta_id=carpeta_id, en_papelera=False).order_by("nombre")
+def _contenido(carpeta):
+    ambito = {"organizacion_id": carpeta.organizacion_id, "en_papelera": False}
+    carpetas = Carpeta.objects.filter(padre_id=carpeta.pk, **ambito).order_by("nombre")
+    archivos = Archivo.objects.filter(carpeta_id=carpeta.pk, **ambito).order_by("nombre")
     return {"carpetas": [{"id": c.pk, "nombre": c.nombre} for c in carpetas],
             "archivos": [{"id": a.pk, "nombre": a.nombre, "tamano_bytes": a.tamano_bytes,
                           "tipo_mime": a.tipo_mime, "fecha_modificacion": a.actualizado_en} for a in archivos]}
@@ -264,7 +268,7 @@ def _puede_subir(usuario, carpeta_id):
         return False
     try:
         ProveedorStorage().resolver_destino(solicitante_id=usuario.pk, carpeta_id=carpeta_id)
-    except (PermissionDenied, ErrorCarga):
+    except (NotFound, PermissionDenied, ErrorCarga):
         return False
     return True
 
@@ -355,8 +359,9 @@ class PermisosView(Base):
         correo = datos.get("correo")
         usuario = (Usuario.objects.filter(correo_electronico__iexact=correo.strip(), is_active=True).first()
                    if isinstance(correo, str) and correo.strip() else None)
-        if usuario is None or es_miembro(usuario.pk, recurso.organizacion_id):
-            raise ValidationError({"correo": ["No hay un usuario registrado con ese correo fuera de este espacio."]})
+        if usuario is None or (es_miembro(usuario.pk, recurso.organizacion_id)
+                               and not es_compartida(recurso.organizacion_id)):
+            raise ValidationError({"correo": ["No hay una cuenta activa disponible con ese correo."]})
         defaults = {"tipo_permiso": rol, "permite_descarga": descarga, "enlace": None}
         try:
             with transaction.atomic():
@@ -457,19 +462,24 @@ class ContenidoCompartidoView(Base):
         acceso = acceso_usuario(request.user.pk, carpeta_id=pk)
         if acceso is None:
             raise NotFound()
-        carpeta = Carpeta.objects.get(pk=pk)
-        padre_id = (carpeta.padre_id if carpeta.padre_id
-                    and acceso_usuario(request.user.pk, carpeta_id=carpeta.padre_id) else None)
+        carpeta = Carpeta.objects.select_related("padre").get(pk=pk)
+        padre = carpeta.padre
+        padre_id = (padre.pk if padre and padre.organizacion_id == carpeta.organizacion_id
+                    and acceso_usuario(request.user.pk, carpeta_id=padre.pk) else None)
         return ok({"carpeta": {"id": carpeta.pk, "nombre": carpeta.nombre, "padre_id": padre_id},
                    "rol": acceso.rol, "permite_descarga": acceso.permite_descarga,
-                   "puede_subir": acceso.rol == ESCRITURA, **_contenido(carpeta.pk)})
+                   "puede_subir": acceso.rol == ESCRITURA and _puede_subir(request.user, carpeta.pk),
+                   **_contenido(carpeta)})
 
 
 class VistaPreviaView(Base):
     def get(self, request, pk):
         archivo = Archivo.objects.filter(pk=pk, en_papelera=False).first()
-        if archivo is None or not (es_miembro(request.user.pk, archivo.organizacion_id)
-                                   or acceso_usuario(request.user.pk, archivo_id=pk)):
+        if archivo is None or not (
+            miembro_con_acceso_general(request.user.pk, archivo.organizacion_id)
+            or (archivo.propietario_id == request.user.pk and es_miembro(request.user.pk, archivo.organizacion_id))
+            or acceso_usuario(request.user.pk, archivo_id=pk)
+        ):
             raise NotFound()
         return ok(_url_temporal(archivo, descargar=False))
 
@@ -525,13 +535,8 @@ class PublicoBase(Base):
 
     @staticmethod
     def verificado(request, enlace):
-        """¿Puede ver el contenido? Sin contraseña, con X-Share-Token válido o con acceso propio."""
+        """Un enlace protegido solo se abre con su comprobante de contraseña."""
         if not enlace.contrasena_hash:
-            return True
-        usuario, recurso = request.user, enlace.recurso
-        if usuario.is_authenticated and (
-                es_miembro(usuario.pk, recurso.organizacion_id)
-                or acceso_usuario(usuario.pk, archivo_id=enlace.archivo_id, carpeta_id=enlace.carpeta_id)):
             return True
         try:
             datos = signing.loads(request.headers.get("X-Share-Token", ""), salt=SALT_ACCESO,
@@ -590,7 +595,7 @@ class ContenidoPublicoView(PublicoBase):
         carpeta = Carpeta.objects.get(pk=carpeta_id)
         padre_id = None if carpeta.pk == enlace.carpeta_id else carpeta.padre_id
         return ok({"carpeta": {"id": carpeta.pk, "nombre": carpeta.nombre, "padre_id": padre_id},
-                   "rol": enlace.rol, "permite_descarga": enlace.permite_descarga, **_contenido(carpeta.pk)})
+                   "rol": enlace.rol, "permite_descarga": enlace.permite_descarga, **_contenido(carpeta)})
 
 
 class ArchivoPublicoView(PublicoBase):

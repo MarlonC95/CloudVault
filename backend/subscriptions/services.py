@@ -264,12 +264,13 @@ def validar_tarjeta(datos, hoy, actual=None):
     if presente("numero") or presente("cvv"):
         numero_raw = datos.get("numero")
         numero = re.sub(r"[\s-]", "", numero_raw) if isinstance(numero_raw, str) else ""
-        marca = None
-        if numero.isascii() and numero.isdigit() and 13 <= len(numero) <= 19 and luhn_valido(numero):
-            marca = marca_tarjeta(numero)
+        marca = marca_tarjeta(numero) if numero.isascii() and numero.isdigit() and len(numero) >= 4 else None
+        # Amex tiene 15 dígitos; el resto, 16.
+        if marca and len(numero) == (15 if marca == "amex" else 16) and luhn_valido(numero):
             limpio["marca"] = marca
             limpio["ultimos4"] = numero[-4:]
         else:
+            marca = None
             errores["numero"] = ["El número de tarjeta no es válido."]
         cvv_raw = datos.get("cvv")
         cvv = cvv_raw if isinstance(cvv_raw, str) else ""
