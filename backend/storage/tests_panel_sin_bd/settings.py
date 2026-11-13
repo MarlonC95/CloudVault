@@ -3,4 +3,4 @@ from auth_workspaces.tests_administracion_sin_bd.settings import *  # noqa: F403
 
 INSTALLED_APPS = INSTALLED_APPS + ["storage", "almacenamiento", "compartir", "drf_spectacular"]  # noqa: F405
 ROOT_URLCONF = "config.urls"
-ALMACENAMIENTO_URLCONFS_NEGOCIO = ("storage.urls", "subscriptions.urls")
+ALMACENAMIENTO_URLCONFS_NEGOCIO = ("storage.urls", "subscriptions.urls", "compartir.urls")

@@ -2,7 +2,7 @@
 -- Copia del DDL de public (Railway) para las pruebas automáticas en PostgreSQL local. Sin datos ni credenciales.
 -- Portable: gen_random_uuid() (PostgreSQL >= 13) reemplaza uuid_generate_v4() para no depender de uuid-ossp.
 
--- Tablas: archivos, carpetas, enlaces_publicos, historial_pagos, intentos_publicacion, logs_auditoria, miembros_organizacion, organizaciones, permisos_recurso, planes, sesiones_carga, suscripciones, trabajos_mantenimiento, usuarios
+-- Tablas: archivos, carpetas, enlaces_publicos, historial_pagos, intentos_publicacion, invitaciones_organizacion, logs_auditoria, miembros_organizacion, organizaciones, permisos_recurso, planes, sesiones_carga, suscripciones, trabajos_mantenimiento, usuarios
 CREATE TABLE IF NOT EXISTS "archivos" (
     "id" uuid NOT NULL DEFAULT gen_random_uuid(),
     "organizacion_id" uuid,
@@ -78,7 +78,8 @@ CREATE TABLE IF NOT EXISTS "organizaciones" (
     "almacenamiento_usado_bytes" bigint NOT NULL DEFAULT 0,
     "fecha_creacion" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "slug" character varying(150),
-    "actualizado_en" timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+    "actualizado_en" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    "tipo" character varying(10)
 );
 CREATE TABLE IF NOT EXISTS "permisos_recurso" (
     "id" BIGSERIAL,
@@ -145,7 +146,19 @@ CREATE TABLE IF NOT EXISTS "usuarios" (
     "fecha_creacion" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "totp_secret" character varying(64) DEFAULT NULL::character varying,
     "is_2fa_enabled" boolean NOT NULL DEFAULT false,
-    "actualizado_en" timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+    "actualizado_en" timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    "es_superadmin" boolean NOT NULL DEFAULT false
+);
+CREATE TABLE IF NOT EXISTS "invitaciones_organizacion" (
+    "id" uuid NOT NULL,
+    "organizacion_id" uuid NOT NULL,
+    "invitado_por_id" uuid NOT NULL,
+    "destinatario_usuario_id" uuid NOT NULL,
+    "nivel_rol" smallint NOT NULL,
+    "estado" character varying(12) NOT NULL DEFAULT 'PENDIENTE'::character varying,
+    "fecha_creacion" timestamp with time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "fecha_expiracion" timestamp with time zone NOT NULL,
+    "fecha_resolucion" timestamp with time zone
 );
 
 ALTER TABLE "archivos" ADD CONSTRAINT "archivos_pkey" PRIMARY KEY (id);
@@ -162,6 +175,11 @@ ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_pkey" PRIMARY KEY (i
 ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_pkey" PRIMARY KEY (id);
 ALTER TABLE "trabajos_mantenimiento" ADD CONSTRAINT "trabajos_mantenimiento_pkey" PRIMARY KEY (sesion_id);
 ALTER TABLE "usuarios" ADD CONSTRAINT "usuarios_pkey" PRIMARY KEY (id);
+ALTER TABLE "invitaciones_organizacion" ADD CONSTRAINT "invitaciones_organizacion_pkey" PRIMARY KEY (id);
+ALTER TABLE "organizaciones" ADD CONSTRAINT "chk_organizaciones_tipo" CHECK (((tipo IS NULL) OR ((tipo)::text = ANY ((ARRAY['PERSONAL'::character varying, 'COMPARTIDO'::character varying])::text[]))));
+ALTER TABLE "invitaciones_organizacion" ADD CONSTRAINT "invitaciones_organizacion_nivel_rol_check" CHECK ((nivel_rol = ANY (ARRAY[1, 2, 3])));
+ALTER TABLE "invitaciones_organizacion" ADD CONSTRAINT "chk_fechas_invitacion" CHECK ((fecha_expiracion > fecha_creacion));
+ALTER TABLE "invitaciones_organizacion" ADD CONSTRAINT "chk_estado_invitacion" CHECK (((estado)::text = ANY ((ARRAY['PENDIENTE'::character varying, 'ACEPTADA'::character varying, 'RECHAZADA'::character varying, 'REVOCADA'::character varying, 'VENCIDA'::character varying])::text[])));
 ALTER TABLE "archivos" ADD CONSTRAINT "archivos_clave_s3_key" UNIQUE (clave_s3);
 ALTER TABLE "enlaces_publicos" ADD CONSTRAINT "enlaces_publicos_token_random_key" UNIQUE (token_random);
 ALTER TABLE "intentos_publicacion" ADD CONSTRAINT "intentos_publicacion_clave_final_key" UNIQUE (clave_final);
@@ -207,6 +225,9 @@ ALTER TABLE "sesiones_carga" ADD CONSTRAINT "sesiones_carga_solicitante_id_fkey"
 ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES organizaciones(id) ON DELETE CASCADE;
 ALTER TABLE "suscripciones" ADD CONSTRAINT "suscripciones_plan_id_fkey" FOREIGN KEY (plan_id) REFERENCES planes(id) ON DELETE RESTRICT;
 ALTER TABLE "trabajos_mantenimiento" ADD CONSTRAINT "trabajos_mantenimiento_sesion_id_fkey" FOREIGN KEY (sesion_id) REFERENCES sesiones_carga(id) ON DELETE RESTRICT;
+ALTER TABLE "invitaciones_organizacion" ADD CONSTRAINT "invitaciones_organizacion_organizacion_id_fkey" FOREIGN KEY (organizacion_id) REFERENCES organizaciones(id) ON DELETE CASCADE;
+ALTER TABLE "invitaciones_organizacion" ADD CONSTRAINT "invitaciones_organizacion_invitado_por_id_fkey" FOREIGN KEY (invitado_por_id) REFERENCES usuarios(id) ON DELETE CASCADE;
+ALTER TABLE "invitaciones_organizacion" ADD CONSTRAINT "invitaciones_organizacion_destinatario_usuario_id_fkey" FOREIGN KEY (destinatario_usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE;
 
 CREATE INDEX IF NOT EXISTS idx_archivos_carpeta ON archivos USING btree (carpeta_id);
 CREATE INDEX IF NOT EXISTS idx_archivos_org ON archivos USING btree (organizacion_id);
@@ -219,6 +240,8 @@ CREATE INDEX IF NOT EXISTS idx_miembros_org ON miembros_organizacion USING btree
 CREATE INDEX IF NOT EXISTS idx_sesiones_cuota_pendiente ON sesiones_carga USING btree (organizacion_id, expira_en) WHERE ((estado)::text = 'PENDING'::text);
 CREATE INDEX IF NOT EXISTS idx_sesiones_solicitante ON sesiones_carga USING btree (solicitante_id);
 CREATE INDEX IF NOT EXISTS idx_mantenimiento_proximo ON trabajos_mantenimiento USING btree (proximo_intento, sesion_id);
+CREATE INDEX IF NOT EXISTS idx_usuarios_es_superadmin ON usuarios USING btree (es_superadmin);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unico_invitacion_pendiente ON invitaciones_organizacion USING btree (organizacion_id, destinatario_usuario_id) WHERE ((estado)::text = 'PENDIENTE'::text);
 
 CREATE OR REPLACE FUNCTION trigger_actualizar_marca_tiempo()
  RETURNS trigger

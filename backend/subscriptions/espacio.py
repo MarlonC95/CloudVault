@@ -28,17 +28,18 @@ def _generar_slug(correo):
     return f"workspace-{base}-{secrets.token_hex(4)}"
 
 
-def _crear_espacio(usuario):
-    """Crea organización, membresía de propietario y suscripción gratuita."""
-    nombre_org = f"Espacio de {usuario.nombre_completo}"[:150]
+def crear_espacio(usuario, *, nombre, tipo, organizacion_id=None, plan_id=None):
+    """Crea organización, membresía de propietario y suscripción dentro de la transacción del llamador."""
     slug = _generar_slug(usuario.correo_electronico)
 
     for _ in range(5):
         try:
             with transaction.atomic():
                 organizacion = Organizacion.objects.create(
-                    nombre=nombre_org,
+                    nombre=nombre,
                     slug=slug,
+                    tipo=tipo,
+                    **({"id": organizacion_id} if organizacion_id is not None else {}),
                 )
         except IntegrityError:
             slug = _generar_slug(usuario.correo_electronico)
@@ -54,7 +55,7 @@ def _crear_espacio(usuario):
     )
 
     ahora = timezone.now()
-    plan_id = (
+    plan_id = plan_id or (
         Plan.objects.filter(esta_activo=True, id=1).values_list("id", flat=True).first()
         or Plan.objects.filter(esta_activo=True).order_by("precio", "id").values_list("id", flat=True).first()
         or 1
@@ -84,11 +85,16 @@ def asegurar_espacio_personal(usuario_id) -> UUID:
         usuario = Usuario.objects.select_for_update().get(pk=usuario_id)
 
         membresia = (
-            MiembroOrganizacion.objects.filter(usuario_id=usuario_id, nivel_rol=0)
+            MiembroOrganizacion.objects.filter(
+                usuario_id=usuario_id, nivel_rol=0,
+                organizacion_id__in=Organizacion.objects.filter(tipo=Organizacion.PERSONAL).values("pk"),
+            )
             .order_by("fecha_union")
             .first()
         )
         if membresia is not None:
             return membresia.organizacion_id
 
-        return _crear_espacio(usuario)
+        return crear_espacio(
+            usuario, nombre=f"Espacio de {usuario.nombre_completo}"[:150], tipo=Organizacion.PERSONAL,
+        )

@@ -59,6 +59,17 @@ class ValidacionTarjetaTests(SimpleTestCase):
         )
         self.assertEqual(set(errores), {"cvv"})
 
+    def test_largo_exacto_de_numero_y_cvv(self):
+        # Números que pasan Luhn pero con largo incorrecto, y CVV de 4 en una Visa: se rechazan.
+        for numero, cvv, esperado in (
+            ("4242424242424242006", "123", {"numero"}),
+            ("37828224631003", "1234", {"numero"}),
+            ("4242424242424242", "1234", {"cvv"}),
+        ):
+            with self.subTest(numero=numero, cvv=cvv):
+                _, errores = services.validar_tarjeta(datos_tarjeta(numero=numero, cvv=cvv), self.hoy)
+                self.assertEqual(set(errores), esperado)
+
     def test_mes_en_curso_sigue_vigente(self):
         _, errores = services.validar_tarjeta(
             datos_tarjeta(mes_expiracion=11, anio_expiracion=2026), self.hoy
