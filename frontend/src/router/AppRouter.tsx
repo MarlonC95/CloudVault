@@ -8,6 +8,7 @@ import DashboardPage from '../pages/DashboardPage'
 import PapeleraPage from '../pages/PapeleraPage'
 import ProfilePage from '../pages/ProfilePage'
 import PlanesPage from '../pages/PlanesPage'
+import InvitacionesPage from '../pages/InvitacionesPage'
 import MiembrosPage from '../pages/MiembrosPage'
 import CompartidosPage from '../pages/CompartidosPage'
 import EnlacePublicoPage from '../pages/EnlacePublicoPage'
@@ -25,6 +26,10 @@ function RutaProtegida() {
   )
 }
 
+function RutaInvitaciones() {
+  return obtenerSesion() ? <InvitacionesPage /> : <Navigate to="/login" replace />
+}
+
 function RutaPublica() {
   return obtenerSesion() ? <Navigate to="/dashboard" replace /> : <Outlet />
 }
@@ -38,6 +43,7 @@ function AppRouter() {
           <Route path="/registro" element={<RegisterPage />} />
           <Route path="/recuperar" element={<RecoverPasswordPage />} />
         </Route>
+        <Route path="/invitaciones" element={<RutaInvitaciones />} />
         <Route element={<RutaProtegida />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/papelera" element={<PapeleraPage />} />

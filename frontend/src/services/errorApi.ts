@@ -62,7 +62,6 @@ const MENSAJES_POR_CODIGO: Record<CodigoErrorApi, string> = {
   PURGE_INCOMPATIBLE: 'La selección de vaciado ya no coincide con el estado actual de la papelera.',
   RETRY_DEFERRED: 'La operación aún tiene elementos en espera. Intenta de nuevo en unos segundos.',
   METODO_NO_PERMITIDO: 'Operación no permitida en este recurso.',
-  OWNER_REQUIRED: 'La organización debe conservar al menos un propietario activo.',
   CANNOT_REMOVE_SELF: 'No puedes retirarte a ti mismo de la organización desde este panel.',
   ERROR_INTERNO: 'Ocurrió un error en el servidor. Intenta más tarde.',
   SERVICE_UNAVAILABLE: 'El servicio no está disponible en este momento. Intenta más tarde.',
