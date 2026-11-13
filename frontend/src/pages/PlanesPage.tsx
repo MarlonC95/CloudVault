@@ -3,7 +3,7 @@ import { HardDrive, CheckCircle, Check, ChevronRight, X, Loader2, CreditCard } f
 import DashboardLayout from '../components/layout/DashboardLayout'
 import ModalPago from '../components/planes/ModalPago'
 import { useOrganizacion } from '../context/organizacionesContexto'
-import { listarPlanes, obtenerMiPlan, suscribirPlan } from '../services/planesService'
+import { listarPlanes, obtenerMiPlan, suscribirPlan, listarFacturas } from '../services/planesService'
 import { ErrorApi } from '../services/errorApi'
 import type { Plan, MiPlan, TipoFacturacion, Factura } from '../types/planes'
 
@@ -49,7 +49,7 @@ function PlanesPage() {
   const [facturacion, setFacturacion] = useState<TipoFacturacion>('mensual')
   const [planes, setPlanes] = useState<Plan[]>([])
   const [miPlan, setMiPlan] = useState<MiPlan | null>(null)
-  const [facturas] = useState<Factura[]>([])
+  const [facturas, setFacturas] = useState<Factura[]>([])
   const [cargando, setCargando] = useState(true)
   const [errorGeneral, setErrorGeneral] = useState('')
   const [suscribiendoPlanId, setSuscribiendoPlanId] = useState<string | null>(null)
@@ -60,9 +60,14 @@ function PlanesPage() {
 
   async function cargarDatos() {
     try {
-      const [catalogo, actual] = await Promise.all([listarPlanes(), obtenerMiPlan(organizacion.id)])
+      const [catalogo, actual, historial] = await Promise.all([
+        listarPlanes(),
+        obtenerMiPlan(organizacion.id),
+        listarFacturas(organizacion.id).catch(() => ({ resultados: [] as Factura[] })),
+      ])
       setPlanes(catalogo.resultados)
       setMiPlan(actual)
+      setFacturas(historial.resultados)
       setFacturacion(actual.plan.tipoFacturacion)
     } catch (error) {
       setErrorGeneral(error instanceof ErrorApi ? error.message : 'No se pudieron cargar los planes.')
@@ -73,11 +78,16 @@ function PlanesPage() {
 
   useEffect(() => {
     let cancelado = false
-    Promise.all([listarPlanes(), obtenerMiPlan(organizacion.id)])
-      .then(([catalogo, actual]) => {
+    Promise.all([
+      listarPlanes(),
+      obtenerMiPlan(organizacion.id),
+      listarFacturas(organizacion.id).catch(() => ({ resultados: [] as Factura[] })),
+    ])
+      .then(([catalogo, actual, historial]) => {
         if (cancelado) return
         setPlanes(catalogo.resultados)
         setMiPlan(actual)
+        setFacturas(historial.resultados)
         setFacturacion(actual.plan.tipoFacturacion)
       })
       .catch((error) => {
@@ -389,7 +399,7 @@ function PlanesPage() {
                   <div style={{ height: 1, background: '#F1F5F9', marginBottom: 18 }} />
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {[`${plan.almacenamientoLegible} almacenamiento`, ...plan.caracteristicas].map((caracteristica) => (
+                    {Array.from(new Set([`${plan.almacenamientoLegible} almacenamiento`, ...plan.caracteristicas])).map((caracteristica) => (
                       <div key={caracteristica} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div
                           style={{
@@ -480,9 +490,9 @@ function PlanesPage() {
                   Historial de facturas
                 </h2>
                 <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden' }}>
-                  {facturas.map((factura) => (
+                  {facturas.map((factura, indice) => (
                     <div
-                      key={factura.id}
+                      key={`${factura.id}-${indice}`}
                       style={{
                         display: 'flex',
                         justifyContent: 'space-between',

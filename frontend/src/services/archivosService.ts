@@ -106,9 +106,10 @@ export async function moverArchivo(archivoId: string, carpetaId: string | null, 
 }
 
 /** Paso 1 de la carga directa — POST /archivos/iniciar-carga/ (contrato 4.1). */
-export async function iniciarCarga(archivo: File, carpetaId: string | null, organizacionId: string): Promise<CargaIniciada> {
+export async function iniciarCarga(archivo: File, carpetaId: string | null, organizacionId: string | null): Promise<CargaIniciada> {
   const respuesta = await clienteApi.post<RespuestaApi<CargaIniciadaApi>>('/archivos/iniciar-carga/', {
-    organizacion_id: organizacionId,
+    // Sin organización (carpeta compartida con permiso de editor), el backend la deduce de la carpeta.
+    ...(organizacionId ? { organizacion_id: organizacionId } : {}),
     nombre: archivo.name,
     tamano_bytes: archivo.size,
     tipo_mime: archivo.type || 'application/octet-stream',
@@ -137,7 +138,7 @@ export async function confirmarCarga(archivoId: string, etag?: string): Promise<
 export async function subirArchivo(
   archivo: File,
   carpetaId: string | null,
-  organizacionId: string,
+  organizacionId: string | null,
   alProgresar?: (porcentaje: number) => void,
 ): Promise<string> {
   const carga = await iniciarCarga(archivo, carpetaId, organizacionId)

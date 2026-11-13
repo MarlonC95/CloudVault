@@ -14,7 +14,7 @@ interface PerfilApi {
   nombre_completo: string
   correo_electronico: string
   rol: RolUsuario
-  plan: { id: string; nombre: string }
+  plan: { id: string; nombre: string } | null
   dos_factores: boolean
   almacenamiento: {
     usado_bytes: number

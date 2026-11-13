@@ -1,12 +1,14 @@
 export function parsearTamanoAMb(tamano: string): number {
-  const coincidencia = tamano.match(/([\d.]+)\s*(KB|MB|GB)/i)
+  const coincidencia = tamano.match(/([\d.]+)\s*(TB|GB|MB|KB|B)\b/i)
   if (!coincidencia) return 0
 
   const valor = parseFloat(coincidencia[1])
   const unidad = coincidencia[2].toUpperCase()
 
+  if (unidad === 'TB') return valor * 1024 * 1024
   if (unidad === 'GB') return valor * 1024
   if (unidad === 'KB') return valor / 1024
+  if (unidad === 'B') return valor / (1024 * 1024)
   return valor
 }
 
