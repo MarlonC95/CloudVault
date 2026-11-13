@@ -15,6 +15,7 @@ from uuid import UUID
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core import signing
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, ValidationError
@@ -198,17 +199,33 @@ class EnlacesView(Base):
         if nuevo:
             enlace = EnlacePublico(token=secrets.token_urlsafe(32), creado_por_id=request.user.pk, **_filtro(recurso))
         enlace.rol, enlace.permite_descarga, enlace.fecha_expiracion = rol, descarga, expiracion
+        nueva_password = False
         if "password" in datos:
             password = datos["password"]
             if password in (None, ""):
                 enlace.contrasena_hash = None
             elif isinstance(password, str) and len(password) <= 128:
                 enlace.contrasena_hash = make_password(password)
+                nueva_password = True
             else:
                 raise ValidationError({"password": ["Texto de hasta 128 caracteres, o null para quitarla."]})
-        # ponytail: dos POST simultáneos del primer enlace chocan con ux_enlace_* (500 en el segundo);
-        # reintentar como actualización si llega a pasar.
-        enlace.save(force_insert=nuevo)
+        try:
+            with transaction.atomic():
+                enlace.save(force_insert=nuevo)
+                if not nuevo and nueva_password:
+                    PermisoRecurso.objects.filter(enlace=enlace).delete()
+        except IntegrityError:
+            enlace = EnlacePublico.objects.filter(**_filtro(recurso)).first()
+            if enlace is None:
+                raise
+            nuevo = False
+            enlace.rol, enlace.permite_descarga, enlace.fecha_expiracion = rol, descarga, expiracion
+            if "password" in datos:
+                enlace.contrasena_hash = make_password(datos["password"]) if nueva_password else None
+            with transaction.atomic():
+                enlace.save()
+                if nueva_password:
+                    PermisoRecurso.objects.filter(enlace=enlace).delete()
         _auditar(request, "ENLACE_CREADO" if nuevo else "ENLACE_ACTUALIZADO", recurso.organizacion_id,
                  enlace_id=enlace.pk, rol=rol, permite_descarga=descarga)
         return ok(_enlace(enlace), status=201 if nuevo else 200)
@@ -231,7 +248,7 @@ class PermisosView(Base):
         _exigir_dueno(request, recurso)
         permisos = (PermisoRecurso.objects.select_related("usuario", "enlace")
                     .filter(**_filtro(recurso)).order_by("fecha_creacion", "id"))
-        return ok([_permiso(p) for p in permisos])
+        return ok([_permiso(p) for p in permisos if _efectivo(p) is not None])
 
     def post(self, request):
         datos = _datos(request)
@@ -243,9 +260,17 @@ class PermisosView(Base):
                    if isinstance(correo, str) and correo.strip() else None)
         if usuario is None or es_miembro(usuario.pk, recurso.organizacion_id):
             raise ValidationError({"correo": ["No hay un usuario registrado con ese correo fuera de este espacio."]})
-        permiso, creado = PermisoRecurso.objects.update_or_create(
-            usuario=usuario, **_filtro(recurso),
-            defaults={"tipo_permiso": rol, "permite_descarga": descarga, "enlace": None})
+        defaults = {"tipo_permiso": rol, "permite_descarga": descarga, "enlace": None}
+        try:
+            with transaction.atomic():
+                permiso, creado = PermisoRecurso.objects.update_or_create(
+                    usuario=usuario, **_filtro(recurso), defaults=defaults)
+        except IntegrityError:
+            with transaction.atomic():
+                PermisoRecurso.objects.filter(usuario=usuario, **_filtro(recurso)).update(**defaults)
+                permiso = PermisoRecurso.objects.select_related("usuario", "enlace").get(
+                    usuario=usuario, **_filtro(recurso))
+                creado = False
         _auditar(request, "PERMISO_OTORGADO", recurso.organizacion_id, permiso_id=permiso.pk,
                  usuario_destino=usuario.pk, tipo_permiso=rol, permite_descarga=descarga)
         return ok(_permiso(permiso), status=201 if creado else 200)
@@ -258,6 +283,8 @@ class PermisoDetalleView(Base):
         if permiso is None:
             raise NotFound()
         recurso = permiso.archivo or permiso.carpeta
+        if recurso.en_papelera:
+            raise NotFound()
         _exigir_dueno(request, recurso)
         return permiso, recurso
 

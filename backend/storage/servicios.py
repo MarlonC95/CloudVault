@@ -73,7 +73,12 @@ class ProveedorStorage:
             usuario_id=solicitante_id, organizacion_id=organizacion_id,
         ).values_list("nivel_rol", flat=True).first()
         if type(nivel) is not int or nivel not in NIVELES_ESCRITURA:
-            raise PermissionDenied()
+            # Editor de una carpeta compartida de esa organización (p. ej. al confirmar su carga).
+            acceso = (acceso_usuario(solicitante_id, carpeta_id=carpeta_id, using=self.using)
+                      if carpeta_id is not None else None)
+            if acceso is None or acceso.rol != ESCRITURA or acceso.organizacion_id != organizacion_id:
+                raise PermissionDenied()
+            return DestinoAutorizado(solicitante_id, organizacion_id, carpeta_id)
         if carpeta_id is not None and not Carpeta.objects.using(self.using).filter(
             pk=carpeta_id, organizacion_id=organizacion_id, en_papelera=False,
         ).exists():
@@ -108,12 +113,12 @@ class ProveedorStorage:
             cursor.execute("""SELECT a.id, a.organizacion_id, a.carpeta_id, a.nombre,
                     a.clave_s3, a.tamano_bytes, a.tipo_mime,
                     (SELECT s.checksum_sha256 FROM sesiones_carga s
-                     WHERE s.archivo_id = a.id ORDER BY s.creado_en DESC LIMIT 1)
-                FROM archivos a JOIN miembros_organizacion m ON m.organizacion_id = a.organizacion_id
-                WHERE a.id = %s AND m.usuario_id = %s AND m.nivel_rol IN (0,2,3)
-                    AND NOT a.en_papelera""" + (
-                        " FOR SHARE OF a, m" if connections[self.using].in_atomic_block else ""),
-                [archivo_id, solicitante_id])
+                     WHERE s.archivo_id = a.id ORDER BY s.creado_en DESC LIMIT 1),
+                    EXISTS(SELECT 1 FROM miembros_organizacion m WHERE m.organizacion_id = a.organizacion_id
+                           AND m.usuario_id = %s AND m.nivel_rol IN (0,2,3){bloqueo})
+                FROM archivos a WHERE a.id = %s AND NOT a.en_papelera{bloqueo}""".format(
+                    bloqueo=" FOR SHARE" if connections[self.using].in_atomic_block else ""),
+                [solicitante_id, archivo_id])
             fila = cursor.fetchone()
         if fila is None:
             raise ErrorCarga(CodigoError.NO_ENCONTRADO)
