@@ -58,10 +58,11 @@ class ContratoStorageTests(StorageTransactionTestCase):
     def test_borrado_definitivo_requiere_s3_exitoso(self):
         archivo = self.archivo(en_papelera=True, fecha_papelera=timezone.now())
         with patch("storage.views.ClienteS3") as cliente, patch("storage.views.ConfiguracionS3.desde_entorno"):
-            cliente.return_value.borrar_tecnico.side_effect = ValueError("S3")
+            cliente.return_value.borrar_fisico_verificado.side_effect = ValueError("S3")
             self.assertEqual(self.client.delete(self.url("papelera-detail", archivo.pk)).status_code, 503)
             self.assertTrue(Archivo.objects.filter(pk=archivo.pk).exists())
-            cliente.return_value.borrar_tecnico.side_effect = None
+            cliente.return_value.borrar_fisico_verificado.side_effect = None
+            cliente.return_value.borrar_fisico_verificado.return_value = 1024
             self.assertEqual(self.client.delete(self.url("papelera-detail", archivo.pk)).status_code, 204)
             self.assertFalse(Archivo.objects.filter(pk=archivo.pk).exists())
 

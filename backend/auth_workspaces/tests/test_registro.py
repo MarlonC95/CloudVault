@@ -13,7 +13,7 @@ from rest_framework.test import APIClient
 
 from auth_workspaces.models import LogAuditoria, Usuario
 from auth_workspaces.services import registrar_usuario
-from subscriptions.models import MiembroOrganizacion, Organizacion, Suscripcion
+from subscriptions.models import MiembroOrganizacion, Organizacion, Plan, Suscripcion
 
 
 URL = "/api/v1/auth/registro/"
@@ -168,6 +168,22 @@ class RegistroTests(TestCase):
 class RegistroConcurrenteTests(TransactionTestCase):
     def setUp(self):
         cache.clear()
+        self._orgs_previas = list(Organizacion.objects.values_list("pk", flat=True))
+        self._usuarios_previos = list(Usuario.objects.values_list("pk", flat=True))
+        Plan.objects.get_or_create(
+            id=1,
+            defaults={
+                "nombre": "Gratuito / Básico",
+                "limite_almacenamiento_bytes": 16106127360,
+                "precio": 0,
+                "esta_activo": True,
+            },
+        )
+
+    def tearDown(self):
+        Organizacion.objects.exclude(pk__in=self._orgs_previas).delete()
+        Usuario.objects.exclude(pk__in=self._usuarios_previos).delete()
+        super().tearDown()
 
     def test_solicitudes_concurrentes_no_duplican_correo(self):
         barrier = Barrier(2)

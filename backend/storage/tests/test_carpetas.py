@@ -6,6 +6,7 @@ from auth_workspaces.models import Usuario
 from common.testing import cliente_autenticado, espacio_de_trabajo
 
 from storage.models import Archivo, Carpeta
+from storage.tests.transaccionales import StorageTransactionTestCase
 
 
 class CarpetasAPITests(APITestCase):
@@ -198,23 +199,6 @@ class CarpetasAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
         self.assertIn("nombre", response.data["error"]["fields"])
 
-    def test_eliminar_desvincula_archivos(self):
-        carpeta = self._crear_carpeta(nombre="Borrar")
-        hija = self._crear_carpeta(padre=carpeta, nombre="Hija")
-        archivo = self._crear_archivo(carpeta=carpeta)
-        archivo_hijo = self._crear_archivo(carpeta=hija, clave_s3="clave-hijo")
-        response = self.client.delete(self._url_org("carpeta-detail", carpeta.pk))
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        for obj in (carpeta, hija):
-            self.assertFalse(Carpeta.objects.filter(pk=obj.pk).exists())
-        archivo.refresh_from_db()
-        archivo_hijo.refresh_from_db()
-        self.assertIsNone(archivo.carpeta_id)
-        self.assertIsNone(archivo_hijo.carpeta_id)
-        self.assertFalse(archivo.en_papelera)
-        response_list = self.client.get(self._url_org("carpeta-list"))
-        self.assertEqual(response_list.data["data"]["count"], 0)
-
     def test_contenido_lista_hijos(self):
         carpeta = self._crear_carpeta(nombre="Caja")
         hija = self._crear_carpeta(padre=carpeta, nombre="Hija")
@@ -224,3 +208,26 @@ class CarpetasAPITests(APITestCase):
         data = response.data["data"]
         self.assertEqual({c["id"] for c in data["subcarpetas"]}, {str(hija.pk)})
         self.assertEqual({c["id"] for c in data["archivos"]}, {str(archivo.pk)})
+
+
+class EliminarCarpetaTests(StorageTransactionTestCase):
+    """Eliminar una carpeta envía su árbol a la papelera (reclama los archivos fuera de transacción)."""
+
+    setUp = CarpetasAPITests.setUp
+    _url = CarpetasAPITests._url
+    _url_org = CarpetasAPITests._url_org
+    _crear_carpeta = CarpetasAPITests._crear_carpeta
+    _crear_archivo = CarpetasAPITests._crear_archivo
+
+    def test_eliminar_envia_arbol_a_papelera(self):
+        carpeta = self._crear_carpeta(nombre="Borrar")
+        hija = self._crear_carpeta(padre=carpeta, nombre="Hija")
+        archivo = self._crear_archivo(carpeta=carpeta)
+        archivo_hijo = self._crear_archivo(carpeta=hija, clave_s3="clave-hijo")
+        response = self.client.delete(self._url_org("carpeta-detail", carpeta.pk))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        for obj in (carpeta, hija, archivo, archivo_hijo):
+            obj.refresh_from_db()
+            self.assertTrue(obj.en_papelera)
+        response_list = self.client.get(self._url_org("carpeta-list"))
+        self.assertEqual(response_list.data["data"]["count"], 0)

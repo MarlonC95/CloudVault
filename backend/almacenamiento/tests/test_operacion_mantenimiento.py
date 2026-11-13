@@ -15,7 +15,7 @@ class ArranqueMantenimientoTests(SimpleTestCase):
     def setUpClass(cls):
         super().setUpClass()
         # Conservar fixtures locales por instrucción del usuario.
-        cls.temporal = Path(mkdtemp(prefix="cv-arranque-mantenimiento-", dir="/private/tmp"))
+        cls.temporal = Path(mkdtemp(prefix="cv-arranque-mantenimiento-"))
         cls.interprete = cls.temporal / "interprete simulado"
         cls.interprete.write_text(f"#!{sys.executable}\n" + '''
 import json, os, sys
