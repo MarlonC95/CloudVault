@@ -3,11 +3,11 @@
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import OperationalError
-from django.http import JsonResponse
+from django.db import IntegrityError, OperationalError, transaction
+from django.http import Http404, JsonResponse
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema, inline_serializer
 from rest_framework import serializers, status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -299,7 +299,11 @@ class PerfilView(ContratoAPIMixin, APIView):
                 usuario.correo_electronico = nuevo_correo
                 campos.append("correo_electronico")
         if campos:
-            usuario.save(update_fields=campos)
+            try:
+                with transaction.atomic():
+                    usuario.save(update_fields=campos)
+            except IntegrityError:
+                return fail("CORREO_EN_USO", status=409)
         return ok({
             "id": str(usuario.id),
             "nombre_completo": usuario.nombre_completo,
@@ -314,7 +318,7 @@ class PerfilView(ContratoAPIMixin, APIView):
             return resolver_organizacion(usuario, pedido)
         try:
             return resolver_organizacion(usuario)
-        except Exception:
+        except (ValidationError, PermissionDenied, NotFound, Http404):
             return None
 
 

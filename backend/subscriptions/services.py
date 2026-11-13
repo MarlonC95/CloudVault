@@ -69,7 +69,7 @@ def plan_id_desde_codigo(codigo):
         limpio = codigo.strip()
         if limpio in IDS_PUBLICOS:
             return IDS_PUBLICOS[limpio]
-        if limpio.isdigit():
+        if limpio.isascii() and limpio.isdigit():
             entero = int(limpio)
             return entero if entero in CODIGOS_PUBLICOS else None
     return None
@@ -229,7 +229,7 @@ def _entero(valor):
         return None
     if isinstance(valor, int):
         return valor
-    if isinstance(valor, str) and valor.strip().isdigit():
+    if isinstance(valor, str) and valor.strip().isascii() and valor.strip().isdigit():
         return int(valor.strip())
     return None
 
@@ -246,31 +246,35 @@ def validar_tarjeta(datos, hoy, actual=None):
         return actual is None or campo in datos
 
     if presente("titular"):
-        titular = " ".join(str(datos.get("titular") or "").split())
+        titular_raw = datos.get("titular")
+        titular = " ".join(titular_raw.split()) if isinstance(titular_raw, str) else ""
         if 2 <= len(titular) <= 100:
             limpio["titular"] = titular
         else:
             errores["titular"] = ["Indica el nombre del titular como aparece en la tarjeta."]
 
     if presente("tipo"):
-        tipo = _TIPOS_TARJETA.get(datos.get("tipo"))
+        tipo_raw = datos.get("tipo")
+        tipo = _TIPOS_TARJETA.get(tipo_raw) if isinstance(tipo_raw, str) else None
         if tipo:
             limpio["tipo"] = tipo
         else:
             errores["tipo"] = ["El tipo debe ser 'credito' o 'debito'."]
 
     if presente("numero") or presente("cvv"):
-        numero = re.sub(r"[\s-]", "", str(datos.get("numero") or ""))
+        numero_raw = datos.get("numero")
+        numero = re.sub(r"[\s-]", "", numero_raw) if isinstance(numero_raw, str) else ""
         marca = None
-        if numero.isdigit() and 13 <= len(numero) <= 19 and luhn_valido(numero):
+        if numero.isascii() and numero.isdigit() and 13 <= len(numero) <= 19 and luhn_valido(numero):
             marca = marca_tarjeta(numero)
             limpio["marca"] = marca
             limpio["ultimos4"] = numero[-4:]
         else:
             errores["numero"] = ["El número de tarjeta no es válido."]
-        cvv = str(datos.get("cvv") or "")
+        cvv_raw = datos.get("cvv")
+        cvv = cvv_raw if isinstance(cvv_raw, str) else ""
         largos = (4,) if marca == "amex" else (3,) if marca else (3, 4)
-        if not (cvv.isdigit() and len(cvv) in largos):
+        if not (cvv.isascii() and cvv.isdigit() and len(cvv) in largos):
             errores["cvv"] = ["El CVV no es válido."]
 
     if presente("mes_expiracion") or presente("anio_expiracion"):

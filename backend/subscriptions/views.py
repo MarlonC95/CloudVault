@@ -4,6 +4,7 @@ La suscripción pertenece a la organización; el ámbito se resuelve con
 ``resolver_organizacion`` y solo el propietario (nivel_rol 0) puede contratar.
 """
 
+from collections.abc import Mapping
 import uuid
 
 from django.db import transaction
@@ -104,6 +105,8 @@ class SuscribirView(ContratoAPIMixin, APIView):
         tags=["Suscripciones"],
     )
     def post(self, request):
+        if not isinstance(request.data, Mapping):
+            return fail("VALIDATION_ERROR", {"non_field_errors": ["Se esperaba un objeto JSON."]})
         ambito = resolver_organizacion(
             request.user, request.data.get("organizacion_id"), escritura=True
         )
@@ -160,6 +163,10 @@ class SuscribirView(ContratoAPIMixin, APIView):
             )
             if suscripcion is None:
                 suscripcion = Suscripcion(organizacion_id=ambito.organizacion_id)
+            else:
+                Suscripcion.objects.filter(
+                    organizacion_id=ambito.organizacion_id, estado=Suscripcion.ESTADO_ACTIVE
+                ).exclude(pk=suscripcion.pk).update(estado=Suscripcion.ESTADO_CANCELED)
             suscripcion.plan = plan
             suscripcion.estado = Suscripcion.ESTADO_ACTIVE
             suscripcion.intervalo = intervalo
@@ -294,6 +301,8 @@ class TarjetasView(ContratoAPIMixin, APIView):
         tags=["Suscripciones"],
     )
     def post(self, request):
+        if not isinstance(request.data, Mapping):
+            return fail("VALIDATION_ERROR", {"non_field_errors": ["Se esperaba un objeto JSON."]})
         ambito = _ambito_propietario(request, request.data.get("organizacion_id"))
         limpio, errores = services.validar_tarjeta(request.data, timezone.localdate())
         if errores:
@@ -336,6 +345,8 @@ class TarjetaDetalleView(ContratoAPIMixin, APIView):
         tags=["Suscripciones"],
     )
     def patch(self, request, tarjeta_id):
+        if not isinstance(request.data, Mapping):
+            return fail("VALIDATION_ERROR", {"non_field_errors": ["Se esperaba un objeto JSON."]})
         ambito = _ambito_propietario(request, request.data.get("organizacion_id"))
         with transaction.atomic():
             _bloquear_organizacion(ambito.organizacion_id)
