@@ -1,16 +1,17 @@
-import { Download, Users, Trash2, Shield, AlertTriangle, HardDrive, FileText, Clock, User, FolderInput } from 'lucide-react'
+import { Download, Eye, Users, Trash2, Shield, AlertTriangle, HardDrive, FileText, Clock, User, FolderInput } from 'lucide-react'
 import { obtenerConfiguracionTipoArchivo } from '../../utils/tiposArchivo'
 import type { Archivo } from '../../types/archivo'
 
 interface PanelDetalleArchivoProps {
   archivo: Archivo | null
+  onVistaPrevia?: (archivo: Archivo) => void
   onDescargar: (archivo: Archivo) => void
   onCompartir: (archivo: Archivo) => void
   onEliminar: (archivo: Archivo) => void
   onMover: (archivo: Archivo) => void
 }
 
-function PanelDetalleArchivo({ archivo, onDescargar, onCompartir, onEliminar, onMover }: PanelDetalleArchivoProps) {
+function PanelDetalleArchivo({ archivo, onVistaPrevia, onDescargar, onCompartir, onEliminar, onMover }: PanelDetalleArchivoProps) {
   if (!archivo) return null
 
   const configuracion = obtenerConfiguracionTipoArchivo(archivo.tipo)
@@ -94,6 +95,30 @@ function PanelDetalleArchivo({ archivo, onDescargar, onCompartir, onEliminar, on
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {onVistaPrevia && (
+            <button
+              type="button"
+              onClick={() => onVistaPrevia(archivo)}
+              style={{
+                width: '100%',
+                background: '#EFF6FF',
+                color: '#2563EB',
+                border: '1px solid #BFDBFE',
+                borderRadius: 8,
+                padding: '8px 0',
+                fontWeight: 600,
+                fontSize: 13,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+              }}
+            >
+              <Eye size={13} strokeWidth={2.1} />
+              Vista previa
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onDescargar(archivo)}

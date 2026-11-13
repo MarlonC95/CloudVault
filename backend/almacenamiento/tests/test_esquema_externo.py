@@ -73,7 +73,7 @@ class EsquemaExternoTests(SimpleTestCase):
             "SELECT to_regclass('public.trabajos_mantenimiento') IS NOT NULL")
 
     def test_evidencia_no_depende_de_documentos_personales_en_clon_limpio(self):
-        repo = Path(mkdtemp(prefix="cv-evidencia-test-", dir="/private/tmp"))
+        repo = Path(mkdtemp(prefix="cv-evidencia-test-"))
         modulo = repo / "backend/almacenamiento"
         modulo.mkdir(parents=True)
         (modulo / "ejemplo.py").write_text("# ensayo\n")

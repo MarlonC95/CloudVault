@@ -135,6 +135,10 @@ class OpenAPIContratoTests(SimpleTestCase):
             "/api/v1/archivos/iniciar-carga/",
             "/api/v1/archivos/{id}/confirmar-carga/",
             "/api/v1/archivos/{id}/descarga/",
+            "/api/v1/organizaciones/disponibles/",
+            "/api/v1/organizaciones/{organizacion_id}/miembros/",
+            "/api/v1/organizaciones/{organizacion_id}/miembros/{usuario_id}/",
+            "/api/v1/organizaciones/{organizacion_id}/auditoria/",
         })
         self.assertIn({"CloudVaultBearerAuth": []}, installed["paths"][
             "/api/v1/archivos/iniciar-carga/"]["post"]["security"])

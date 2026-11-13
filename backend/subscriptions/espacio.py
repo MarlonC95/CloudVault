@@ -14,6 +14,7 @@ from django.utils import timezone
 from auth_workspaces.models import Usuario
 
 from .models import MiembroOrganizacion, Organizacion, Plan, Suscripcion
+from .services import sumar_meses
 
 
 def _slug_usuario(correo):
@@ -53,13 +54,18 @@ def _crear_espacio(usuario):
     )
 
     ahora = timezone.now()
+    plan_id = (
+        Plan.objects.filter(esta_activo=True, id=1).values_list("id", flat=True).first()
+        or Plan.objects.filter(esta_activo=True).order_by("precio", "id").values_list("id", flat=True).first()
+        or 1
+    )
     Suscripcion.objects.create(
         organizacion_id=organizacion.id,
-        plan_id=Plan.objects.filter(esta_activo=True, id=1).values_list("id", flat=True).first() or 1,
+        plan_id=plan_id,
         estado=Suscripcion.ESTADO_ACTIVE,
         intervalo=Suscripcion.INTERVALO_MENSUAL,
         periodo_inicio=ahora,
-        periodo_fin=ahora.replace(year=ahora.year + 10),
+        periodo_fin=sumar_meses(ahora, 120),
         auto_renovar=True,
     )
 

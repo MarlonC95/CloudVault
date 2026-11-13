@@ -64,8 +64,8 @@ def main():
     resultados = []
     salida = 1
     temporal_eliminado = False
-    temporal_contexto = (nullcontext(mkdtemp(prefix="cv-fase02-", dir="/private/tmp")) if args.conservar
-                         else TemporaryDirectory(prefix="cv-fase02-", dir="/private/tmp"))
+    temporal_contexto = (nullcontext(mkdtemp(prefix="cv-fase02-")) if args.conservar
+                         else TemporaryDirectory(prefix="cv-fase02-"))
     with temporal_contexto as temporal:
         directorio = Path(temporal)
         datos, socket = directorio / "datos", directorio / "socket"

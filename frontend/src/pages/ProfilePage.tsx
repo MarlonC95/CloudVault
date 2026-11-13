@@ -8,7 +8,6 @@ import {
   Shield,
   HardDrive,
   Lock,
-  KeyRound,
   Zap,
   Activity,
   Upload,
@@ -18,12 +17,11 @@ import {
 } from 'lucide-react'
 import DashboardLayout from '../components/layout/DashboardLayout'
 import { useOrganizacion } from '../context/organizacionesContexto'
-import { obtenerPerfil, actualizarPerfil, cambiarContrasena, cambiarPalabraSecreta } from '../services/perfilService'
+import { obtenerPerfil, actualizarPerfil, cambiarContrasena } from '../services/perfilService'
 import { ErrorApi } from '../services/errorApi'
 import type { PerfilUsuario } from '../types/perfil'
 
 const LONGITUD_MINIMA_CONTRASENA = 8
-const LONGITUD_MINIMA_PALABRA_SECRETA = 12
 
 const CATEGORIAS_ALMACENAMIENTO = [
   { etiqueta: 'Documentos', tamano: '18 GB', color: '#2563EB' },
@@ -64,11 +62,6 @@ function ProfilePage() {
   const [nuevaContrasena, setNuevaContrasena] = useState('')
   const [confirmarContrasena, setConfirmarContrasena] = useState('')
   const [erroresContrasena, setErroresContrasena] = useState<Record<string, string>>({})
-
-  const [modificandoPalabraSecreta, setModificandoPalabraSecreta] = useState(false)
-  const [contrasenaActualPalabra, setContrasenaActualPalabra] = useState('')
-  const [palabraSecreta, setPalabraSecreta] = useState('')
-  const [errorPalabraSecreta, setErrorPalabraSecreta] = useState('')
 
   const [dosFactores, setDosFactores] = useState(false)
 
@@ -177,45 +170,10 @@ function ProfilePage() {
     setErroresContrasena({})
   }
 
-  async function guardarPalabraSecreta() {
-    setErrorPalabraSecreta('')
-    if (!contrasenaActualPalabra) {
-      setErrorPalabraSecreta('Ingresa tu contraseña actual')
-      return
-    }
-    if (!palabraSecreta || palabraSecreta.length < LONGITUD_MINIMA_PALABRA_SECRETA) {
-      setErrorPalabraSecreta(`La palabra secreta debe tener al menos ${LONGITUD_MINIMA_PALABRA_SECRETA} caracteres`)
-      return
-    }
-
-    setErrorGeneral('')
-    setMensajeExito('')
-    try {
-      await cambiarPalabraSecreta({ contrasenaActual: contrasenaActualPalabra, nuevaPalabraSecreta: palabraSecreta })
-      setMensajeExito('Palabra secreta actualizada correctamente.')
-      setModificandoPalabraSecreta(false)
-      setContrasenaActualPalabra('')
-      setPalabraSecreta('')
-    } catch (error) {
-      if (error instanceof ErrorApi && error.codigo === 'VALIDATION_ERROR') {
-        setErrorPalabraSecreta(error.campos.nueva_palabra_secreta?.[0] ?? 'Revisa los datos enviados.')
-      } else {
-        setErrorGeneral(error instanceof ErrorApi ? error.message : 'No se pudo actualizar la palabra secreta.')
-      }
-    }
-  }
-
-  function cancelarPalabraSecreta() {
-    setModificandoPalabraSecreta(false)
-    setContrasenaActualPalabra('')
-    setPalabraSecreta('')
-    setErrorPalabraSecreta('')
-  }
-
   const almacenamientoUsado = perfil?.almacenamiento.usadoLegible ?? '—'
   const almacenamientoTotal = perfil?.almacenamiento.cuotaLegible ?? '—'
   const porcentajeUsado = perfil?.almacenamiento.porcentajeUsado ?? 0
-  const nombrePlan = perfil?.plan.nombre ?? '—'
+  const nombrePlan = perfil?.plan?.nombre ?? '—'
 
   const campos = [
     { etiqueta: 'Nombre Completo', valor: nombre, icono: <User size={14} color="#94A3B8" strokeWidth={1.8} />, editable: true, onCambiar: setNombre },
@@ -509,101 +467,6 @@ function ProfilePage() {
                   <button
                     type="button"
                     onClick={cancelarContrasena}
-                    style={{ flex: 1, background: '#fff', color: '#64748B', border: '1px solid #E2E8F0', borderRadius: 7, padding: '8px 0', fontSize: 12, cursor: 'pointer' }}
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {!modificandoPalabraSecreta ? (
-              <button
-                type="button"
-                onClick={() => setModificandoPalabraSecreta(true)}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '12px 14px',
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: 10,
-                  cursor: 'pointer',
-                  marginBottom: 10,
-                  textAlign: 'left',
-                }}
-              >
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(37,99,235,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <KeyRound size={15} color="#2563EB" strokeWidth={1.9} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', margin: 0 }}>Modificar Palabra Secreta</p>
-                  <p style={{ fontSize: 11, color: '#94A3B8', margin: '2px 0 0' }}>Método alternativo de recuperación de acceso</p>
-                </div>
-                <ChevronRight size={15} color="#CBD5E1" />
-              </button>
-            ) : (
-              <div style={{ background: '#F8FAFC', border: '1px solid #2563EB', borderRadius: 10, padding: '14px', marginBottom: 10 }}>
-                <p style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', marginBottom: 10 }}>Nueva palabra secreta</p>
-                <div style={{ position: 'relative', marginBottom: 8 }}>
-                  <div style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', display: 'flex', pointerEvents: 'none' }}>
-                    <Lock size={13} color="#94A3B8" strokeWidth={1.8} />
-                  </div>
-                  <input
-                    type="password"
-                    placeholder="Contraseña actual"
-                    value={contrasenaActualPalabra}
-                    onChange={(evento) => setContrasenaActualPalabra(evento.target.value)}
-                    style={{
-                      width: '100%',
-                      boxSizing: 'border-box',
-                      padding: '9px 12px 9px 32px',
-                      fontSize: 13,
-                      border: `1.5px solid ${errorPalabraSecreta && !palabraSecreta ? '#DC2626' : '#E2E8F0'}`,
-                      borderRadius: 7,
-                      outline: 'none',
-                      color: '#0F172A',
-                      background: '#fff',
-                      marginBottom: 8,
-                    }}
-                  />
-                </div>
-                <div style={{ position: 'relative', marginBottom: 8 }}>
-                  <div style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', display: 'flex', pointerEvents: 'none' }}>
-                    <KeyRound size={13} color="#94A3B8" strokeWidth={1.8} />
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Nueva palabra o frase secreta"
-                    value={palabraSecreta}
-                    onChange={(evento) => setPalabraSecreta(evento.target.value)}
-                    style={{
-                      width: '100%',
-                      boxSizing: 'border-box',
-                      padding: '9px 12px 9px 32px',
-                      fontSize: 13,
-                      border: `1.5px solid ${errorPalabraSecreta ? '#DC2626' : '#E2E8F0'}`,
-                      borderRadius: 7,
-                      outline: 'none',
-                      color: '#0F172A',
-                      background: '#fff',
-                    }}
-                  />
-                  {errorPalabraSecreta && <div style={{ fontSize: 11, color: '#DC2626', marginTop: 4 }}>{errorPalabraSecreta}</div>}
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button
-                    type="button"
-                    onClick={guardarPalabraSecreta}
-                    style={{ flex: 1, background: '#2563EB', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 0', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
-                  >
-                    Guardar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={cancelarPalabraSecreta}
                     style={{ flex: 1, background: '#fff', color: '#64748B', border: '1px solid #E2E8F0', borderRadius: 7, padding: '8px 0', fontSize: 12, cursor: 'pointer' }}
                   >
                     Cancelar

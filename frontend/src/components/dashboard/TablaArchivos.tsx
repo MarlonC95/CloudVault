@@ -7,6 +7,7 @@ interface TablaArchivosProps {
   archivos: Archivo[]
   archivoSeleccionadoId: string | null
   onSeleccionarArchivo: (archivo: Archivo) => void
+  onVistaPrevia?: (archivo: Archivo) => void
   onDescargar: (archivo: Archivo) => void
   onCompartir: (archivo: Archivo) => void
   onEliminar: (archivo: Archivo) => void
@@ -44,6 +45,7 @@ function TablaArchivos({
   archivos,
   archivoSeleccionadoId,
   onSeleccionarArchivo,
+  onVistaPrevia,
   onDescargar,
   onCompartir,
   onEliminar,
@@ -207,7 +209,11 @@ function TablaArchivos({
                           <button
                             type="button"
                             onClick={() => {
-                              onSeleccionarArchivo(archivo)
+                              if (onVistaPrevia) {
+                                onVistaPrevia(archivo)
+                              } else {
+                                onSeleccionarArchivo(archivo)
+                              }
                               setMenuAbiertoId(null)
                             }}
                             style={ESTILO_ITEM_MENU}

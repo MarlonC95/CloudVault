@@ -214,37 +214,39 @@ function PapeleraPage() {
             <p style={{ fontSize: 14, color: '#64748B', margin: 0 }}>Gestiona tus archivos eliminados recientemente.</p>
           </div>
 
-          <button
-            type="button"
-            disabled={papeleraCompleta.length === 0 || procesando}
-            onClick={() => setIdsPorEliminar(papeleraCompleta.map((archivo) => archivo.id))}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 7,
-              height: 38,
-              padding: '0 16px',
-              background: papeleraCompleta.length === 0 ? '#F8FAFC' : '#FEF2F2',
-              color: papeleraCompleta.length === 0 ? '#CBD5E1' : COLOR_PELIGRO,
-              border: `1px solid ${papeleraCompleta.length === 0 ? '#E2E8F0' : '#FCA5A5'}`,
-              borderRadius: 10,
-              cursor: papeleraCompleta.length === 0 ? 'not-allowed' : 'pointer',
-              fontSize: 13,
-              fontWeight: 600,
-            }}
-          >
-            <Trash2 size={14} strokeWidth={2} />
-            Vaciar archivos
-          </button>
           {puedeVaciarPapelera && (
-            <button
-              type="button"
-              disabled={papeleraVacia || procesando}
-              onClick={() => setConfirmarVaciado(true)}
-              style={{ ...ESTILO_BOTON_BARRA, height: 38 }}
-            >
-              Vaciar papelera (operación agregada)
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                disabled={papeleraCompleta.length === 0 || procesando}
+                onClick={() => setIdsPorEliminar(papeleraCompleta.map((archivo) => archivo.id))}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  height: 38,
+                  padding: '0 16px',
+                  background: papeleraCompleta.length === 0 ? '#F8FAFC' : '#FEF2F2',
+                  color: papeleraCompleta.length === 0 ? '#CBD5E1' : COLOR_PELIGRO,
+                  border: `1px solid ${papeleraCompleta.length === 0 ? '#E2E8F0' : '#FCA5A5'}`,
+                  borderRadius: 10,
+                  cursor: papeleraCompleta.length === 0 ? 'not-allowed' : 'pointer',
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                <Trash2 size={14} strokeWidth={2} />
+                Vaciar archivos
+              </button>
+              <button
+                type="button"
+                disabled={papeleraVacia || procesando}
+                onClick={() => setConfirmarVaciado(true)}
+                style={{ ...ESTILO_BOTON_BARRA, height: 38 }}
+              >
+                Vaciar papelera (operación agregada)
+              </button>
+            </div>
           )}
         </div>
 
@@ -351,10 +353,12 @@ function PapeleraPage() {
                 <RotateCcw size={13} strokeWidth={2} />
                 Restaurar selección
               </button>
-              <button type="button" onClick={() => setIdsPorEliminar(seleccionados)} style={ESTILO_BOTON_BARRA}>
-                <Trash2 size={13} strokeWidth={2} />
-                Eliminar selección
-              </button>
+              {puedeVaciarPapelera && (
+                <button type="button" onClick={() => setIdsPorEliminar(seleccionados)} style={ESTILO_BOTON_BARRA}>
+                  <Trash2 size={13} strokeWidth={2} />
+                  Eliminar selección
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -608,26 +612,28 @@ function PapeleraPage() {
                       <RotateCcw size={12} strokeWidth={2.2} />
                       Restaurar
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setIdsPorEliminar([archivo.id])}
-                      title="Eliminar permanentemente"
-                      aria-label={`Eliminar ${archivo.nombre} permanentemente`}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: 30,
-                        height: 30,
-                        background: 'transparent',
-                        border: '1px solid rgba(220,38,38,0.2)',
-                        borderRadius: 8,
-                        cursor: 'pointer',
-                        color: COLOR_PELIGRO,
-                      }}
-                    >
-                      <Trash2 size={13} strokeWidth={2} />
-                    </button>
+                    {puedeVaciarPapelera && (
+                      <button
+                        type="button"
+                        onClick={() => setIdsPorEliminar([archivo.id])}
+                        title="Eliminar permanentemente"
+                        aria-label={`Eliminar ${archivo.nombre} permanentemente`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 30,
+                          height: 30,
+                          background: 'transparent',
+                          border: '1px solid rgba(220,38,38,0.2)',
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                          color: COLOR_PELIGRO,
+                        }}
+                      >
+                        <Trash2 size={13} strokeWidth={2} />
+                      </button>
+                    )}
                   </div>
                 </div>
               )

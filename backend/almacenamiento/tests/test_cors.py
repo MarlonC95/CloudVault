@@ -166,7 +166,7 @@ class CorsTests(SimpleTestCase):
         cliente._cliente.put_bucket_cors.assert_not_called()
 
     def test_respaldo_privado_sin_inventar_reversion(self):
-        carpeta = tempfile.mkdtemp(prefix="cloudvault-cors-test-", dir="/private/tmp")
+        carpeta = tempfile.mkdtemp(prefix="cloudvault-cors-test-")
         with patch.object(aplicar_cors.tempfile, "mkdtemp", return_value=carpeta):
             anterior = {"estado": "no_verificable", "CORSRules": None}
             aplicar_cors.guardar_respaldo(anterior, {"CORSRules": []})
